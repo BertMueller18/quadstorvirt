@@ -4470,9 +4470,9 @@ bdev_alloc_for_pgdata(struct tdisk *tdisk, struct pgdata_wlist *alloc_list, stru
 
 	BINT_INC(bint, pgalloc_lookups, 1);
 	BINT_TSTART(start_ticks);
-	sx_xlock(bint->alloc_lock);
+	bint_alloc_lock(bint);
 	retval = __bint_alloc_for_pgdata(tdisk, bint, alloc_list, index_info_list, size, ret_bint);
-	sx_xunlock(bint->alloc_lock);
+	bint_alloc_unlock(bint);
 	BINT_TEND(bint,pgdata_alloc_ticks,start_ticks);
 	return retval;
 }
@@ -4563,7 +4563,9 @@ __bdev_alloc_block(struct bdevint *bint, uint32_t size, struct index_info *index
 #endif
 
 	BINT_TSTART(start_ticks);
+	bint_alloc_lock(bint);
 	ret = __bint_alloc_fast(bint, size, index_info, type);
+	bint_alloc_unlock(bint);
 	BINT_TEND(bint,fast_alloc_ticks,start_ticks);
 	if (ret) {
 		BINT_INC(bint, fast_lookups, 1);
@@ -4578,7 +4580,9 @@ __bdev_alloc_block(struct bdevint *bint, uint32_t size, struct index_info *index
 	}
 #endif
 
+	bint_alloc_lock(bint);
 	ret = __bint_alloc_slow(bint, size, index_info, type);
+	bint_alloc_unlock(bint);
 	BINT_INC(bint, slow_lookups, 1);
 	BINT_INC(bint, slow_size, size);
 	return ret;
@@ -4601,7 +4605,9 @@ bdev_alloc_block(struct bdevgroup *group, uint32_t size, struct bdevint **ret_bi
 			start_bint = bint;
 		else if (start_bint == bint)
 			break;
+		bint_alloc_lock(bint);
 		ret = __bint_alloc_fast(bint, size, index_info, type);
+		bint_alloc_unlock(bint);
 		if (ret) {
 			BINT_INC(bint, fast_lookups, 1);
 			BINT_INC(bint, fast_size, size);
@@ -4618,7 +4624,9 @@ bdev_alloc_block(struct bdevgroup *group, uint32_t size, struct bdevint **ret_bi
 	bint = bint_get_eligible(group, size);
 	GLOB_TEND(bint_eligible_ticks, start_ticks);
 	while (bint) {
+		bint_alloc_lock(bint);
 		ret = __bint_alloc_slow(bint, size, index_info, type);
+		bint_alloc_unlock(bint);
 		if (ret) {
 			BINT_INC(bint, slow_lookups, 1);
 			BINT_INC(bint, slow_size, size);

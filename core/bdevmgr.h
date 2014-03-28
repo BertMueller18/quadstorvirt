@@ -403,6 +403,8 @@ SLIST_HEAD(bdev_log_list, bdevint);
 
 #define bint_lock(b)	mtx_lock((b)->bint_lock)
 #define bint_unlock(b)	mtx_unlock((b)->bint_lock)
+#define bint_alloc_lock(b)	sx_xlock((b)->alloc_lock)
+#define bint_alloc_unlock(b)	sx_xunlock((b)->alloc_lock)
 #define BINT_MAX_INDEX_COUNT		64
 
 extern struct bdevint *bint_list[];
