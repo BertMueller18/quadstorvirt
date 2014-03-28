@@ -97,9 +97,9 @@ qs_lib_bio_page(struct bdevint *bint, uint64_t b_start, uint32_t size, pagestruc
 	int retval;
 #endif
 
-	debug_check(node_in_standby() && !node_in_transition() && rw == QS_IO_WRITE);
+	debug_check(node_in_standby() && !node_in_transition() && is_write_iop(rw));
 #ifdef ENABLE_STATS
-	if (rw == QS_IO_WRITE) {
+	if (is_write_iop(rw)) {
 		GLOB_INC(bio_writes, 1);
 		GLOB_INC(bio_write_size, size);
 		switch (type) {

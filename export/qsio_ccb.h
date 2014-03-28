@@ -12,6 +12,17 @@ enum {
 	QS_IO_SYNC_FLUSH,
 };
 
+static inline int
+is_write_iop(int cmd)
+{
+	switch (cmd) {
+	case QS_IO_READ:
+		return 0;
+	default:
+		return 1;
+	}
+}
+
 enum {
 	QSIO_DIR_IN		= 0x01,
 	QSIO_DIR_OUT		= 0x02,

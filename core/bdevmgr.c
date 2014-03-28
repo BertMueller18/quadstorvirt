@@ -535,7 +535,7 @@ static void subgroup_end_bio(struct bio *bio, int err)
 
 	while ((index = SLIST_FIRST(&tcache->priv.meta_list)) != NULL) {
 		SLIST_REMOVE_HEAD(&tcache->priv.meta_list, tc_list);
-		if (bio_get_command(bio) == QS_IO_WRITE)
+		if (is_write_iop(bio_get_command(bio)))
 			atomic_clear_bit(META_DATA_DIRTY, &index->flags);
 		else
 			atomic_clear_bit(META_DATA_READ_DIRTY, &index->flags);
@@ -713,17 +713,16 @@ index_lookup_io(struct index_group *group, int rw)
 	pagestruct_t *metadata;
 	int retval;
 
-	if (rw == QS_IO_WRITE && !atomic_test_bit(META_IO_PENDING, &ilookup->flags))
+	if (is_write_iop(rw) && !atomic_test_bit(META_IO_PENDING, &ilookup->flags))
 	{
 		return 0;
 	}
-	else if (rw == QS_IO_READ && !atomic_test_bit(META_IO_READ_PENDING, &ilookup->flags))
+	else if (!is_write_iop(rw) && !atomic_test_bit(META_IO_READ_PENDING, &ilookup->flags))
 	{
 		return 0;
 	}
 
-	if (rw == QS_IO_WRITE)
-	{
+	if (is_write_iop(rw)) {
 		atomic_set_bit(META_DATA_DIRTY, &ilookup->flags);
 		atomic_clear_bit(META_IO_PENDING, &ilookup->flags);
 		page = vm_pg_alloc(0);
@@ -2696,7 +2695,7 @@ tcache_add_index(struct tcache *tcache, struct index_subgroup *subgroup, struct 
 		index_put(index);
 		return -1;
 	}
-	if (dir == QS_IO_WRITE) {
+	if (is_write_iop(dir)) {
 		atomic_clear_bit(META_IO_PENDING, &index->flags);
 		atomic_set_bit(META_DATA_DIRTY, &index->flags);
 	}
@@ -3392,10 +3391,8 @@ int bint_load_thread(void *data)
 		if (kernel_thread_check(&bint->flags, BINT_LOAD_EXIT))
 			break;
 
-		if (node_in_standby()) {
-			atomic_clear_bit(BINT_IO_PENDING, &bint->flags);
+		if (node_in_standby())
 			continue;
-		}
 
 		if (atomic_read(&bint->free_list_indexes) > FREE_LIST_INDEXES_CACHED) {
 			if (atomic_test_bit(BINT_IN_SYNC_DATA, &bint->flags)) {

@@ -93,7 +93,7 @@ void static amap_table_end_bio(bio_t *bio, int err)
 	if (unlikely(err))
 		atomic_set_bit_short(ATABLE_META_DATA_ERROR, &amap_table->flags);
 
-	if (bio_get_command(bio) == QS_IO_WRITE) {
+	if (is_write_iop(bio_get_command(bio))) {
 		complete_io_waiters(&aio_meta->io_waiters_post);
 		atomic_clear_bit_short(ATABLE_META_DATA_DIRTY, &amap_table->flags);
 	} else {
@@ -122,7 +122,7 @@ void static amap_end_bio(bio_t *bio, int err)
 	if (unlikely(err))
 		atomic_set_bit_short(AMAP_META_DATA_ERROR, &amap->flags);
 
-	if (bio_get_command(bio) == QS_IO_WRITE) {
+	if (is_write_iop(bio_get_command(bio))) {
 		complete_io_waiters(&aio_meta->io_waiters_post);
 		atomic_clear_bit_short(AMAP_META_DATA_DIRTY, &amap->flags);
 	}
@@ -161,7 +161,7 @@ amap_table_io(struct amap_table *amap_table, int rw)
 	int retval;
 	struct aio_meta *aio_meta;
 
-	if (rw == QS_IO_WRITE) {
+	if (is_write_iop(rw)) {
 		debug_check(atomic_test_bit_short(ATABLE_META_DATA_DIRTY, &amap_table->flags));
 		amap_table_write_csum(amap_table);
 		node_amap_table_sync_send(amap_table);
@@ -263,7 +263,7 @@ amap_io(struct amap *amap, uint64_t write_id, int rw)
 	int retval;
 	struct aio_meta *aio_meta;
 
-	if (rw == QS_IO_WRITE) {
+	if (is_write_iop(rw)) {
 		debug_check(atomic_test_bit_short(AMAP_META_DATA_DIRTY, &amap->flags));
 		TDISK_INC(amap->amap_table->tdisk, amap_writes, 1);
 		amap_write_csum(amap, write_id);

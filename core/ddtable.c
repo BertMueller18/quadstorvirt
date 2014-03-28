@@ -309,12 +309,10 @@ void static ddtable_ddlookup_end_bio(struct bio *bio, int err)
 	if (unlikely(err))
 		atomic_set_bit_short(DDLOOKUP_META_DATA_ERROR, &ddtable_ddlookup->flags);
 
-	if (bio_get_command(bio) == QS_IO_WRITE) {
+	if (is_write_iop(bio_get_command(bio)))
 		atomic_clear_bit_short(DDLOOKUP_META_DATA_DIRTY, &ddtable_ddlookup->flags);
-	}
-	else {
+	else
 		atomic_clear_bit_short(DDLOOKUP_META_DATA_READ_DIRTY, &ddtable_ddlookup->flags);
-	}
 	chan_wakeup(ddtable_ddlookup->ddlookup_wait);
 	ddtable_ddlookup_node_put(ddtable_ddlookup);
 	bio_free_page(bio);
@@ -326,19 +324,19 @@ ddtable_ddlookup_io(struct ddtable *ddtable, struct ddtable_ddlookup_node *ddloo
 {
 	int retval;
 
-	if (rw == QS_IO_WRITE && !atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags))
+	if (is_write_iop(rw) && !atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags))
 	{
 		debug_check(atomic_test_bit_short(DDLOOKUP_META_IO_READ_PENDING, &ddlookup->flags));
 		return 0;
 	}
-	else if (rw == QS_IO_READ && !atomic_test_bit_short(DDLOOKUP_META_IO_READ_PENDING, &ddlookup->flags))
+	else if (!is_write_iop(rw) && !atomic_test_bit_short(DDLOOKUP_META_IO_READ_PENDING, &ddlookup->flags))
 	{
 		debug_check(atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags));
 		return 0;
 	}
 
 
-	if (rw == QS_IO_WRITE) {
+	if (is_write_iop(rw)) {
 		atomic_set_bit_short(DDLOOKUP_META_DATA_DIRTY, &ddlookup->flags);
 		atomic_clear_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags);
 		atomic_clear_bit_short(DDLOOKUP_META_DATA_CLONED, &ddlookup->flags);
@@ -786,7 +784,7 @@ ddtables_sync(struct ddtable *ddtable, int dd_idx, int max, int rw)
 	int retval;
 	int error = 0;
 
-	if (max == dd_idx || (node_in_standby() && rw == QS_IO_WRITE))
+	if (max == dd_idx || (node_in_standby() && is_write_iop(rw)))
 		return 0;
 
 	tcache = tcache_alloc((max - dd_idx));
@@ -795,7 +793,7 @@ ddtables_sync(struct ddtable *ddtable, int dd_idx, int max, int rw)
 		ddlookup = SLIST_FIRST(&ddlookup_list->lhead);
 		node_ddlookup_lock(ddlookup);
 
-		if (rw == QS_IO_READ) {
+		if (!is_write_iop(rw)) {
 			if (!atomic_test_bit_short(DDLOOKUP_META_IO_READ_PENDING, &ddlookup->flags)) {
 				node_ddlookup_unlock(ddlookup);
 				continue;
@@ -809,9 +807,8 @@ ddtables_sync(struct ddtable *ddtable, int dd_idx, int max, int rw)
 			atomic_clear_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags);
 		}
 
-		if (rw == QS_IO_WRITE) {
+		if (is_write_iop(rw))
 			write_raw_ddlookup(ddlookup);
-		}
 
 		retval = tcache_add_page(tcache, ddlookup->metadata, ddlookup->b_start, ddtable->bint, DDTABLE_LOOKUP_NODE_SIZE, rw);
 		ddtable_decr_sync_count(ddtable, ddlookup);

@@ -3478,7 +3478,7 @@ amap_table_get_amap(struct amap_table *amap_table, uint32_t amap_id, uint32_t am
 	else {
 		block = get_amap_block(amap_table, amap_idx);
 		if (!block) {
-			if (rw == QS_IO_READ || unmap) {
+			if (!is_write_iop(rw) || unmap) {
 				*ret_amap = NULL;
 				return 0;
 			}
@@ -4011,7 +4011,7 @@ again:
 #endif
 		if (!lba_in_range(lba_write, iter) && !sync_wait)
 			continue;
-		if (lba_write->dir == QS_IO_READ && iter->dir == QS_IO_READ && !sync_wait)
+		if (!is_write_iop(lba_write->dir) && !is_write_iop(iter->dir) && !sync_wait)
 			continue;
 
 		wait_on_chan_uncond(tdisk->lba_wait);

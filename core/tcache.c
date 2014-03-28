@@ -174,7 +174,7 @@ __tcache_add_page(struct tcache *tcache, pagestruct_t *page, uint64_t b_start, s
 #endif
 	int retval;
 
-	if (rw == QS_IO_WRITE)
+	if (is_write_iop(rw))
 		bio = tcache->bio_list[tcache->last_idx];
 	else 
 		bio = tcache_bio_locate(tcache, b_start, bint);
@@ -301,7 +301,7 @@ tcache_check_comp(struct tcache *tcache, int *ret_idx, int bio_count, int rw)
 	atomic_inc(&tcache->bio_remain);
 	for (i = *ret_idx; i < j; i++) {
 		biot = tcache->bio_list[i];
-		if (rw == QS_IO_WRITE)
+		if (is_write_iop(rw))
 			memcpy(bio_data + offset, vm_pg_address(biot->pages[0]), biot->dxfer_len);
 		else {
 			biot->comp_biot = comp_biot;
