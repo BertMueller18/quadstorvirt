@@ -323,6 +323,7 @@ calc_rcache_bits(void)
 	int bits = 12;
 	uint64_t used;
 	uint64_t rcache_reserved_size = (ddtable_global.reserved_size * 70) / 100;
+	uint64_t threshold = 0;
 	int rcache_entry_size = sizeof(struct rcache_entry) + PAGE_SIZE;
 
 	used = (1ULL << 31);
@@ -332,8 +333,13 @@ calc_rcache_bits(void)
 		used = (used << 1);
 		rcache_cached_min = (rcache_cached_min << 1);
 	}
+	if (mdaemon_info.rcache_threshold) {
+		threshold = (availmem * mdaemon_info.rcache_threshold) / 100;
+		if (rcache_reserved_size > threshold)
+			rcache_reserved_size = threshold;
+	}
 	rcache_cached_max = max_t(uint32_t, rcache_cached_min, (rcache_reserved_size / rcache_entry_size));
-	debug_info("rcache cached max %u rcache cached min %u ddtable_global reserved size %u\n", rcache_cached_max, rcache_cached_min, ddtable_global.reserved_size);
+	debug_info("rcache cached max %u rcache cached min %u ddtable_global reserved size %u avail mem %llu threshold %llu rcache threshold %d\n", rcache_cached_max, rcache_cached_min, ddtable_global.reserved_size, (unsigned long long)availmem, (unsigned long long)threshold, mdaemon_info.rcache_threshold);
 }
 
 static void
@@ -389,6 +395,8 @@ void
 rcache_update_count(void)
 {
 	uint64_t ddused_size;
+	uint64_t availmem = qs_availmem;
+	uint64_t threshold = 0;
 	int entry_size, rcache_entry_size;
 	uint64_t rcache_reserved_size = (ddtable_global.reserved_size * 70) / 100;
 
@@ -399,6 +407,12 @@ rcache_update_count(void)
 		rcache_reserved_size = 0;
 	else
 		rcache_reserved_size -= ddused_size;
+
+	if (mdaemon_info.rcache_threshold) {
+		threshold = (availmem * mdaemon_info.rcache_threshold) / 100;
+		if (rcache_reserved_size > threshold)
+			rcache_reserved_size = threshold;
+	}
 
 	rcache_cached_max = max_t(uint32_t, rcache_cached_min, (rcache_reserved_size / rcache_entry_size));
 	debug_info("rcache cached max %u rcache_cached_min %u rcache reserved size %llu ddtable_global reserved size %llu ddused_size %llu ddlookup_count %llu\n", rcache_cached_max, rcache_cached_min, (unsigned long long)(rcache_reserved_size), (unsigned long long)ddtable_global.reserved_size, (unsigned long long)ddused_size, (unsigned long long)ddtable_global_ddlookup_count());

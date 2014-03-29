@@ -31,8 +31,9 @@
 
 #define TL_RID_MAX	40
 struct mdaemon_info {
-	pid_t daemon_pid;
-	char sys_rid[TL_RID_MAX];
+	int rcache_threshold;
+	int amap_threshold;
+	int index_threshold;
 };
 
 #define TDISK_NAME_LEN		128
@@ -486,6 +487,15 @@ enum {
 	FC_RULE_ALLOW,
 	FC_RULE_DISALLOW,
 };
+
+#define RCACHE_THRESHOLD_MIN			5
+#define RCACHE_THRESHOLD_MAX			35
+#define AMAP_THRESHOLD_MIN			2
+#define AMAP_THRESHOLD_DEFAULT			6
+#define AMAP_THRESHOLD_MAX			12
+#define INDEX_THRESHOLD_MIN			4
+#define INDEX_THRESHOLD_DEFAULT			8
+#define INDEX_THRESHOLD_MAX			15
 
 #define MIRROR_RECV_TIMEOUT_MAX			120
 #define MIRROR_CONNECT_TIMEOUT_MAX		70

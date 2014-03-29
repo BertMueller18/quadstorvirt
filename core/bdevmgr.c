@@ -57,8 +57,8 @@ uint32_t index_lookup_syncs;
 uint32_t bint_syncs;
 
 atomic_t bdevs;
-uint32_t cached_indexes_max;
-uint32_t cached_indexes;
+uint64_t cached_indexes_max;
+uint64_t cached_indexes;
 
 static struct bintindex * index_alloc(struct index_subgroup *subgroup, uint32_t index_id, allocflags_t flags);
 static int bint_mark_index_full(struct bintindex *index);
@@ -68,14 +68,16 @@ calc_index_cache_count(void)
 {
 	uint64_t availmem = qs_availmem;
 	int entry_size;
-	int bdev_count = max_t(int, atomic_read(&bdevs), 1);  
+	int bdev_count = max_t(int, atomic_read(&bdevs), 1);
+	int threshold;
 
 	entry_size = sizeof(struct bintindex) + BINT_BMAP_SIZE;
 	availmem = availmem/entry_size;
-	cached_indexes_max = (availmem * CACHED_INDEXES_PERCENTAGE)/100;
+	threshold = mdaemon_info.index_threshold ? mdaemon_info.index_threshold : INDEX_THRESHOLD_DEFAULT;
+	cached_indexes_max = (availmem * threshold)/100;
 	cached_indexes_max = (cached_indexes_max / bdev_count);
 	cached_indexes = (cached_indexes_max * 90) / 100; 
-	debug_info("cached indexes %u cached indexes max %u\n", cached_indexes, cached_indexes_max);
+	debug_info("cached indexes %u cached indexes max %u index threshold %d\n", cached_indexes, cached_indexes_max, mdaemon_info.index_threshold);
 }
 
 static void

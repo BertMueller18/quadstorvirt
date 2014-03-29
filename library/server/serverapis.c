@@ -720,6 +720,18 @@ load_quadstor_conf(void)
 		}
 		strcpy(default_group, buf);
 	}
+
+	buf[0] = 0;
+	get_config_value(QUADSTOR_CONFIG_FILE, "RCacheThreshold", buf);
+	mdaemon_info.rcache_threshold = atoi(buf);
+
+	buf[0] = 0;
+	get_config_value(QUADSTOR_CONFIG_FILE, "IndexThreshold", buf);
+	mdaemon_info.index_threshold = atoi(buf);
+
+	buf[0] = 0;
+	get_config_value(QUADSTOR_CONFIG_FILE, "AmapThreshold", buf);
+	mdaemon_info.amap_threshold = atoi(buf);
 	return 0;
 }
 
@@ -735,8 +747,6 @@ load_configured_groups(void)
 		DEBUG_ERR_SERVER("sql_query_groups failed\n");
 		return -1;
 	}
-
-	load_quadstor_conf();
 
 	group_none = alloc_buffer(sizeof(*group_none));
 	if (!group_none) {
@@ -1015,6 +1025,8 @@ __tl_server_load(void)
 		exit(EXIT_FAILURE);
 
 	}
+
+	load_quadstor_conf();
 
 	retval = tl_server_register_pid();
 	if (retval != 0) {
@@ -4342,7 +4354,6 @@ tl_server_register_pid(void)
 {
 	int retval;
 
-	mdaemon_info.daemon_pid = getpid();
 	retval = tl_ioctl(TLTARGIOCDAEMONSETINFO, &mdaemon_info);
 
 	if (retval != 0)

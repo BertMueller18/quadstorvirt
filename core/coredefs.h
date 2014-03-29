@@ -144,6 +144,7 @@ calc_csum(uint8_t *buf, int len)
         return (csum);
 }
 
+extern struct mdaemon_info mdaemon_info;
 extern uma_t *write_bmap_cache;
 extern uma_t *group_write_bmap_cache;
 extern uma_t *node_sync_post_cache;

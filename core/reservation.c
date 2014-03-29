@@ -154,8 +154,6 @@ persistent_reservation_read_capabilities(struct qsio_scsiio *ctio, uint16_t allo
 	return 0;
 }
 
-extern struct mdaemon_info mdaemon_info;
-
 int
 persistent_reservation_read_reservations(struct qsio_scsiio *ctio, uint16_t allocation_length, struct reservation *reservation)
 {

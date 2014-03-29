@@ -45,8 +45,8 @@
 
 static int ctio_realloc_pglist(struct qsio_scsiio *ctio, struct pgdata *ref_page, uint32_t num_blocks, uint8_t *hash, unsigned long flags);
 
-uint32_t cached_amaps;
-uint32_t cached_amap_tables;
+uint64_t cached_amaps;
+uint64_t cached_amap_tables;
 atomic_t num_tdisks;
 
 extern struct tdisk *tdisks[];
@@ -98,11 +98,13 @@ calc_amap_cache_count(void)
 	uint64_t availmem;
 	int entry_size;
 	int tdisk_count = max_t(int, atomic_read(&num_tdisks), 1);
+	int threshold;
 
 	entry_size = sizeof(struct amap) + AMAP_SIZE;
  	availmem = qs_availmem;
 	availmem = availmem/entry_size;
-	cached_amaps = (availmem * CACHED_AMAPS_PERCENTAGE)/100;
+	threshold = mdaemon_info.amap_threshold ? mdaemon_info.amap_threshold : AMAP_THRESHOLD_DEFAULT;
+	cached_amaps = (availmem * threshold)/100;
 	cached_amaps = (cached_amaps / tdisk_count); 
 
 	entry_size = sizeof(struct amap_table) + AMAP_TABLE_SIZE;
@@ -110,7 +112,7 @@ calc_amap_cache_count(void)
 	availmem = availmem/entry_size;
 	cached_amap_tables = (availmem * CACHED_AMAP_TABLES_PERCENTAGE)/100;
 	cached_amap_tables = (cached_amap_tables / tdisk_count); 
-	debug_info("cached_amaps %u cached_amap_tables %u tdisk count %d num tdisks %d\n", cached_amaps, cached_amap_tables, tdisk_count, atomic_read(&num_tdisks));
+	debug_info("cached_amaps %u cached_amap_tables %u tdisk count %d num tdisks %d amap threshold %d\n", cached_amaps, cached_amap_tables, tdisk_count, atomic_read(&num_tdisks), mdaemon_info.amap_threshold);
 }
 
 static void
@@ -466,8 +468,6 @@ tdisk_free(struct tdisk *tdisk)
 	wait_chan_free(tdisk->clone_wait);
 	uma_zfree(tdisk_cache, tdisk);
 }
-
-extern struct mdaemon_info mdaemon_info;
 
 static int
 char_to_int(char tmp)

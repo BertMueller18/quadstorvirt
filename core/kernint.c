@@ -207,10 +207,23 @@ struct tdisk *tdisks[TL_MAX_DEVICES];
 struct pgdata pgzero;
 uint8_t *pgzero_addr;
 
+#define MDAEMON_CHECK_THRESHOLD(minfo, elm, mn, mx) 		\
+do {								\
+	int threshold;						\
+	threshold = minfo.elm;					\
+	if (threshold && ((threshold < mn) || threshold > mx))	\
+		minfo.elm = 0;					\
+} while (0)
+
 static void
 mdaemon_set_info(struct mdaemon_info *info)
 {
 	memcpy(&mdaemon_info, info, sizeof(*info));
+	MDAEMON_CHECK_THRESHOLD(mdaemon_info, rcache_threshold, RCACHE_THRESHOLD_MIN, RCACHE_THRESHOLD_MAX);
+	MDAEMON_CHECK_THRESHOLD(mdaemon_info, index_threshold, INDEX_THRESHOLD_MIN, INDEX_THRESHOLD_MAX);
+	MDAEMON_CHECK_THRESHOLD(mdaemon_info, amap_threshold, AMAP_THRESHOLD_MIN, AMAP_THRESHOLD_MAX);
+	if (mdaemon_info.rcache_threshold)
+		calc_rcache_bits();
 }
 
 static void
