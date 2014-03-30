@@ -1345,6 +1345,7 @@ static int srpt_abort_cmd(struct srpt_send_ioctx *ioctx)
 	case SRPT_STATE_NEED_DATA:
 		/* DMA_TO_DEVICE (write) - RDMA read error. */
 		srpt_unmap_sg_to_ib_sge(ioctx->ch, ioctx);
+		srpt_set_cmd_state(ioctx, SRPT_STATE_DONE);
 		target_cmd_recv_failed(&ioctx->cmd);
 		break;
 	case SRPT_STATE_CMD_RSP_SENT:
@@ -1353,6 +1354,7 @@ static int srpt_abort_cmd(struct srpt_send_ioctx *ioctx)
 		 * not been received in time.
 		 */
 		srpt_unmap_sg_to_ib_sge(ioctx->ch, ioctx);
+		srpt_set_cmd_state(ioctx, SRPT_STATE_DONE);
 		target_cmd_send_failed(&ioctx->cmd);
 		break;
 	case SRPT_STATE_MGMT_RSP_SENT:
@@ -1720,7 +1722,7 @@ static int srpt_handle_cmd(struct srpt_rdma_ch *ch,
 	return 0;
 
 send_sense:
-	ib_sc_fail_ctio(cmd, ret);
+	ib_sc_fail_ctio(cmd, ch->sess, send_ioctx->tag, ret);
 	return -1;
 }
 
@@ -1801,6 +1803,7 @@ static void srpt_handle_tsk_mgmt(struct srpt_rdma_ch *ch,
 	uint64_t unpacked_lun;
 	uint32_t tag = 0;
 	int tcm_tmr;
+	int response = SRP_TSK_MGMT_FAILED; 
 	int rc;
 
 	BUG_ON(!send_ioctx);
@@ -1815,16 +1818,21 @@ static void srpt_handle_tsk_mgmt(struct srpt_rdma_ch *ch,
 	srpt_set_cmd_state(send_ioctx, SRPT_STATE_MGMT);
 	send_ioctx->tag = srp_tsk->tag;
 	tcm_tmr = srp_tmr_to_tcm(srp_tsk->tsk_mgmt_func);
-	if (tcm_tmr < 0)
+	if (tcm_tmr < 0) {
+		response = SRP_TSK_MGMT_FUNC_NOT_SUPP;
+		DEBUG_WARN("Unsupport task mgmt function %x\n", srp_tsk->tsk_mgmt_func);
 		goto fail;
+	}
 
 	unpacked_lun = srpt_unpack_lun((uint8_t *)&srp_tsk->lun,
 				       sizeof(srp_tsk->lun));
 
 	if (srp_tsk->tsk_mgmt_func == SRP_TSK_ABORT_TASK) {
 		rc = srpt_rx_mgmt_fn_tag(send_ioctx, srp_tsk->task_tag);
-		if (rc < 0)
+		if (rc < 0) {
+			DEBUG_WARN_NEW("Abort task does not exists for task tag %llx\n", srp_tsk->task_tag);
 			goto fail;
+		}
 
 		tag = srp_tsk->task_tag;
 	}
@@ -1833,7 +1841,7 @@ static void srpt_handle_tsk_mgmt(struct srpt_rdma_ch *ch,
 				tcm_tmr, tag);
 	return;
 fail:
-	ib_sc_fail_notify(cmd, tcm_tmr);
+	ib_sc_fail_notify(cmd, sess, send_ioctx->tag, tcm_tmr, response);
 }
 
 /**

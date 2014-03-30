@@ -39,7 +39,7 @@ struct fcbridge {
 };
 
 enum {
-	SRPT_CMD_TYPE_CTIO,
+	SRPT_CMD_TYPE_CTIO = 0x01,
 	SRPT_CMD_TYPE_NOTIFY,
 };
 

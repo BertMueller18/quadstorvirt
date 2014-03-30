@@ -845,6 +845,7 @@ fcbridge_detach_interface(void)
 
 	while (atomic_read(&alloced_cmds)) {
 		sx_xunlock(&itf_lock);
+		DEBUG_INFO_NEW("Pending cmds count %d\n", atomic_read(&alloced_cmds));
 		wait_on_chan(alloced_cmds_wait, !atomic_read(&alloced_cmds));
 		sx_xlock(&itf_lock);
 	}

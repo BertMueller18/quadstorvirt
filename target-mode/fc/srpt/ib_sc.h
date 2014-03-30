@@ -12,8 +12,8 @@ int target_submit_tmr(struct se_cmd *se_cmd, struct se_session *se_sess, uint32_
 void target_wait_for_sess_cmds(struct se_session *se_sess, int wait_for_tasks);
 void transport_deregister_session(struct se_session *se_sess);
 struct se_session *transport_init_session(struct srpt_rdma_ch *ch);
-int ib_sc_fail_ctio(struct se_cmd *se_cmd, uint8_t asc);
-int ib_sc_fail_notify(struct se_cmd *se_cmd, int function);
+int ib_sc_fail_ctio(struct se_cmd *se_cmd, struct se_session *sess, unsigned int tag, uint8_t asc);
+int ib_sc_fail_notify(struct se_cmd *se_cmd, struct se_session *sess, unsigned int tag, int function, int response);
 
 struct fcbridge* fcbridge_new(void *ha, uint32_t id);
 void fcbridge_exit(struct fcbridge *fcbridge);

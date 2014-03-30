@@ -4389,7 +4389,7 @@ bdev_alloc_list_next_rotate(struct bdevint *bint)
 	return ret;
 }
 
-#define BINT_ALLOC_RESERVED		(1ULL << 26) /* 64 MB */
+#define BINT_ALLOC_RESERVED		(1ULL << 30) /* 1 GB for all disks */
 
 void
 bdev_add_to_alloc_list(struct bdevint *bint)
@@ -4405,6 +4405,7 @@ bdev_remove_from_alloc_list(struct bdevint *bint)
 {
 	struct bdevgroup *group = bint->group;
 
+	debug_print("bint usize %llu free %llu group free %llu ddmaster %d reserved size %llu\n", (unsigned long long)bint->usize, (unsigned long long)atomic64_read(&bint->free), atomic64_read(&group->free), bint->ddmaster, (unsigned long long)ddtable_global.reserved_size);
 	bint_lock(bint);
 	if (bint == group->eligible)
 		group->eligible = NULL;
@@ -4436,7 +4437,7 @@ bint_get_eligible(struct bdevgroup *group, uint32_t size)
 	max_size = max_t(int, size, BINT_ALLOC_RESERVED);
 	while (eligible) {
 		debug_info("eligible initialized %d ddmaster %d free %llu max_size %u ddtable_global.reserved_size %llu\n", eligible->initialized, eligible->ddmaster, (unsigned long long)eligible->free, max_size, (unsigned long long)ddtable_global.reserved_size);
-		if (eligible->initialized == 1 && ((!eligible->ddmaster && (atomic64_read(&eligible->free) > max_size)) || (eligible->ddmaster && (atomic64_read(&eligible->free) > ddtable_global.reserved_size)))) {
+		if (eligible->initialized == 1 && (atomic64_read(&eligible->free) > max_size)) {
 			found = eligible;
 			eligible = bdev_alloc_list_next_rotate(eligible);
 			break;
@@ -4587,6 +4588,8 @@ __bdev_alloc_block(struct bdevint *bint, uint32_t size, struct index_info *index
 	bint_alloc_unlock(bint);
 	BINT_INC(bint, slow_lookups, 1);
 	BINT_INC(bint, slow_size, size);
+	if (!ret)
+		debug_warn("bint usize %llu free %llu\n", (unsigned long long)bint->usize, (unsigned long long)atomic64_read(&bint->free));
 	return ret;
 }
 
@@ -4645,6 +4648,7 @@ bdev_alloc_block(struct bdevgroup *group, uint32_t size, struct bdevint **ret_bi
 		GLOB_TEND(bint_eligible_ticks, start_ticks);
 	}
 
+	debug_warn("Group %s free %llu\n", group->name, (unsigned long long)atomic64_read(&group->free));
 	return 0ULL;
 }
 

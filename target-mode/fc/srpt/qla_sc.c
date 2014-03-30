@@ -144,8 +144,9 @@ qla_end_notify(struct qsio_immed_notify *notify)
 	retval = srpt_queue_response(se_cmd);
 again:
 	if (unlikely(retval != 0)) {
-		if (retval == -EAGAIN) {
-			msleep(1);
+		DEBUG_WARN_NEW("retval %d\n", retval);
+		if (retval == -EAGAIN || retval == -ENOMEM) {
+			msleep(10);
 			goto again;
 		}
 		se_cmd_free_notify(cmd);
@@ -223,8 +224,9 @@ again:
 		retval = srpt_queue_status(se_cmd);
 
 	if (unlikely(retval != 0)) {
-		if (retval == -EAGAIN) {
-			msleep(1);
+		DEBUG_WARN_NEW("retval %d\n", retval);
+		if (retval == -EAGAIN || retval == -ENOMEM) {
+			msleep(10);
 			goto again;
 		}
 		__ctio_free_all(ctio, se_cmd->local_pool);
@@ -265,10 +267,10 @@ target_execute_cmd(struct se_cmd *se_cmd)
 	cmd = container_of(se_cmd, struct srpt_send_ioctx, cmd);
 	ctio = (struct qsio_scsiio *)cmd->cmd.ccb;
 	cmd_sg_free(cmd);
-	if (ctio->ccb_h.flags & QSIO_DIR_OUT && cmd->rdma_aborted != true) {
-		ctio->ccb_h.flags &= ~QSIO_DIR_OUT;
-		__ctio_queue_cmd(ctio);
-	}
+	DEBUG_BUG_ON(!(ctio->ccb_h.flags & QSIO_DIR_OUT));
+	DEBUG_BUG_ON(cmd->rdma_aborted);
+	ctio->ccb_h.flags &= ~QSIO_DIR_OUT;
+	__ctio_queue_cmd(ctio);
 }
 
 static void 
@@ -336,6 +338,7 @@ target_submit_tmr(struct se_cmd *se_cmd, struct se_session *sess, uint32_t unpac
 	se_cmd->tag = tag;
 	se_cmd->type = SRPT_CMD_TYPE_NOTIFY;
 	se_cmd->notify_fn = tmr_func;
+	atomic_inc(&sess->cmds);
 	se_cmd->sess = sess;
 	fcq_insert_cmd(sess->vha->fcbridge, se_cmd);
 	return 0;
@@ -348,8 +351,10 @@ void transport_generic_free_cmd(struct se_cmd *se_cmd)
 	cmd = container_of(se_cmd, struct srpt_send_ioctx, cmd);
 	if (se_cmd->type == SRPT_CMD_TYPE_CTIO)
 		ib_sc_free_ctio(cmd);
-	else
+	else if (se_cmd->type == SRPT_CMD_TYPE_NOTIFY)
 		ib_sc_free_notify(cmd);
+	else
+		DEBUG_WARN_NEW("Invalid se cmd type %d\n", se_cmd->type);
 	srpt_release_cmd(se_cmd);
 }
 
@@ -405,9 +410,9 @@ target_submit_cmd(struct se_cmd *se_cmd, struct se_session *sess, unsigned char 
 	se_cmd->t_task_cdb = se_cmd->__t_task_cdb;
 	se_cmd->task_attr = fcp_task_attr;
 	se_cmd->data_dir = data_dir;
+	atomic_inc(&sess->cmds);
 	se_cmd->sess = sess;
 	se_cmd->tag = tag;
-	atomic_inc(&sess->cmds);
 	memcpy(se_cmd->t_task_cdb, cdb, scsi_command_size(cdb));
 	fcq_insert_cmd(sess->vha->fcbridge, se_cmd);
 	return 0;
@@ -420,7 +425,7 @@ void target_wait_for_sess_cmds(struct se_session *se_sess, int wait_for_tasks)
 }
 
 int
-ib_sc_fail_ctio(struct se_cmd *se_cmd, uint8_t asc)
+ib_sc_fail_ctio(struct se_cmd *se_cmd, struct se_session *sess, unsigned int tag, uint8_t asc)
 {
 	srpt_cmd_t *cmd;
 	struct qpriv *priv;
@@ -433,6 +438,10 @@ ib_sc_fail_ctio(struct se_cmd *se_cmd, uint8_t asc)
 		return -1;
 
 	se_cmd->local_pool = 1;
+	se_cmd->type = SRPT_CMD_TYPE_CTIO;
+	se_cmd->tag = tag;
+	atomic_inc(&sess->cmds);
+	se_cmd->sess = sess;
 	priv = &ctio->ccb_h.priv.qpriv;
 	priv->qcmd = se_cmd;
 	se_cmd->ccb = (struct qsio_hdr *)ctio;
@@ -448,8 +457,9 @@ ib_sc_fail_ctio(struct se_cmd *se_cmd, uint8_t asc)
 	retval = srpt_queue_status(se_cmd);
 again:
 	if (unlikely(retval != 0)) {
-		if (retval == -EAGAIN) {
-			msleep(1);
+		DEBUG_WARN_NEW("retval %d\n", retval);
+		if (retval == -EAGAIN || retval == -ENOMEM) {
+			msleep(10);
 			goto again;
 		}
 		__ctio_free_all(ctio, se_cmd->local_pool);
@@ -460,7 +470,7 @@ again:
 }
 
 int
-ib_sc_fail_notify(struct se_cmd *se_cmd, int function)
+ib_sc_fail_notify(struct se_cmd *se_cmd, struct se_session *sess, unsigned int tag, int function, int response)
 {
 	srpt_cmd_t *cmd;
 	struct se_tmr_req *se_tmr;
@@ -469,13 +479,18 @@ ib_sc_fail_notify(struct se_cmd *se_cmd, int function)
 	cmd = container_of(se_cmd, struct srpt_send_ioctx, cmd);
 	se_tmr = kzalloc(sizeof(*se_tmr), GFP_KERNEL | __GFP_NOFAIL);
 	se_tmr->function = function;
+	se_tmr->response = response;
 	se_cmd->se_tmr_req = se_tmr;
-	se_tmr->response = SRP_TSK_MGMT_FAILED;
+	se_cmd->tag = tag;
+	se_cmd->type = SRPT_CMD_TYPE_NOTIFY;
+	atomic_inc(&sess->cmds);
+	se_cmd->sess = sess;
 	retval = srpt_queue_response(se_cmd);
 again:
 	if (unlikely(retval != 0)) {
-		if (retval == -EAGAIN) {
-			msleep(1);
+		DEBUG_WARN_NEW("retval %d\n", retval);
+		if (retval == -EAGAIN || retval == -ENOMEM) {
+			msleep(10);
 			goto again;
 		}
 		se_cmd_free_notify(cmd);
