@@ -4405,7 +4405,7 @@ bdev_remove_from_alloc_list(struct bdevint *bint)
 {
 	struct bdevgroup *group = bint->group;
 
-	debug_print("bint usize %llu free %llu group free %llu ddmaster %d reserved size %llu\n", (unsigned long long)bint->usize, (unsigned long long)atomic64_read(&bint->free), atomic64_read(&group->free), bint->ddmaster, (unsigned long long)ddtable_global.reserved_size);
+	debug_print("bint usize %llu free %llu group free %llu ddmaster %d reserved size %llu\n", (unsigned long long)bint->usize, (unsigned long long)atomic64_read(&bint->free), (unsigned long long)atomic64_read(&group->free), bint->ddmaster, (unsigned long long)ddtable_global.reserved_size);
 	bint_lock(bint);
 	if (bint == group->eligible)
 		group->eligible = NULL;
