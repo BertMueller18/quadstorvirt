@@ -54,6 +54,8 @@ __rcache_entry_free(struct rcache_entry *entry)
 	uma_zfree(rcache_entry_cache, entry);
 }
 
+#define RCACHE_FREE_RANGE	8192	
+
 static void
 rcache_check(void)
 {
@@ -62,7 +64,7 @@ rcache_check(void)
 	struct rcache_entry_list *lhead;
 	uint32_t hashval;
 
-	while (rcache_count > rcache_cached_max) {
+	while ((rcache_count + RCACHE_FREE_RANGE) > rcache_cached_max) {
 		mtx_lock(glist_lock);
 		entry = TAILQ_FIRST(&glist);
 		TAILQ_REMOVE_INIT(&glist, entry, g_list);
@@ -214,6 +216,7 @@ rcache_entry_insert(struct rcache_entry *new)
 	rcache_count++;
 	mtx_unlock(glist_lock);
 	mtx_unlock(rcache->rcache_lock);
+	rcache_count_check();
 }
 
 void
