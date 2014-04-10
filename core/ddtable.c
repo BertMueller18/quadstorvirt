@@ -364,7 +364,7 @@ ddtable_ddlookup_node_alloc(allocflags_t flags)
 {
 	struct ddtable_ddlookup_node *ddlookup;
 
-	ddlookup = __uma_zalloc(ddtable_ddlookup_node_cache, Q_NOWAIT | Q_ZERO, sizeof(*ddlookup));
+	ddlookup = __uma_zalloc(ddtable_ddlookup_node_cache, Q_NOWAIT);
 	if (unlikely(!ddlookup)) {
 		debug_warn("Memory allocation failure\n");
 		return NULL;
@@ -557,13 +557,13 @@ ddlookup_list_alloc(struct ddtable *ddtable, uint32_t id)
 
 	ddlookup_id = id & NODE_GROUP_MASK;
 
-	ddlookup_list = __uma_zalloc(ddlookup_list_cache, Q_NOWAIT | Q_ZERO, sizeof(*ddlookup_list));
+	ddlookup_list = __uma_zalloc(ddlookup_list_cache, Q_NOWAIT);
 	if (unlikely(!ddlookup_list)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;
 	}
 
-	node = __uma_zalloc(ddnode_cache, Q_NOWAIT, sizeof(*node));
+	node = __uma_alloc(ddnode_cache, Q_NOWAIT);
 	if (unlikely(!node)) {
 		debug_warn("Slab allocation failure\n");
 		uma_zfree(ddlookup_list_cache, ddlookup_list);
@@ -744,14 +744,14 @@ ddtable_init(struct ddtable *ddtable, struct bdevint *bint)
 	for (i = 0; i < num_groups; i++) {
 		struct node_group *node_group;
 
-		node_group = __uma_zalloc(node_group_cache, Q_NOWAIT, sizeof(*node_group));
+		node_group = __uma_alloc(node_group_cache, Q_NOWAIT);
 		if (unlikely(!node_group)) {
 			debug_warn("Slab allocation failure\n");
 			ddtable_free(ddtable);
 			return -1;
 		}
 
-		node_group->ddlookup_lists = __uma_zalloc(fourk_cache, Q_NOWAIT | Q_ZERO, 4096);
+		node_group->ddlookup_lists = __uma_zalloc(fourk_cache, Q_NOWAIT);
 		if (unlikely(!node_group->ddlookup_lists)) {
 			debug_warn("Slab allocation failure\n");
 			uma_zfree(node_group_cache, node_group);
@@ -759,7 +759,7 @@ ddtable_init(struct ddtable *ddtable, struct bdevint *bint)
 			return -1;
 		}
 
-		node_group->ddnodes_list = __uma_zalloc(fourk_cache, Q_NOWAIT | Q_ZERO, 4096);
+		node_group->ddnodes_list = __uma_zalloc(fourk_cache, Q_NOWAIT);
 		if (unlikely(!node_group->ddnodes_list)) {
 			debug_warn("Slab allocation failure\n");
 			uma_zfree(fourk_cache, node_group->ddlookup_lists);

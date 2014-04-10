@@ -1023,7 +1023,6 @@ struct amap *amap_locate(struct amap_table *amap_table, uint64_t lba, int *error
 struct tdisk * tdisk_locate(uint16_t target_id);
 struct tdisk * tdisk_locate_remove(uint16_t target_id);
 struct amap_sync * amap_sync_alloc(struct amap *amap, uint64_t write_id);
-void tdisk_reset_stats(uint32_t target_id);
 void tdisk_print_stats(struct tdisk *tdisk);
 void tdisk_load_amaps(void);
 void tdisk_proc_cmd(void *disk, void *iop);

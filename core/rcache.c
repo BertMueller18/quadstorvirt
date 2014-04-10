@@ -171,7 +171,7 @@ rcache_add_to_list(struct rcache_entry_list *lhead, struct pgdata *pgdata)
 	if (atomic_test_bit(SKIP_RCACHE_INSERT, &pgdata->flags))
 		return;
 
-	new = __uma_zalloc(rcache_entry_cache, Q_NOWAIT | Q_ZERO, sizeof(*new));
+	new = __uma_zalloc(rcache_entry_cache, Q_NOWAIT);
 	if (unlikely(!new))
 		return;
 	
@@ -382,7 +382,7 @@ __rcache_init(void)
 			return -1;
 		}
 		rcache->rcache_lock = mtx_alloc("rcache lock");
-		rcache->entry_list = __uma_zalloc(eightk_cache, Q_NOWAIT, 8192);
+		rcache->entry_list = __uma_alloc(eightk_cache, Q_NOWAIT);
 		if (unlikely(!rcache->entry_list)) {
 			mtx_free(rcache->rcache_lock);
 			free(rcache, M_RCACHE);

@@ -606,7 +606,7 @@ __device_get_initiator_state(struct tdisk *tdisk, uint64_t i_prt[], uint64_t t_p
 			return NULL;
 	}
 
-	iter = __uma_zalloc(istate_cache, Q_WAITOK | Q_ZERO, sizeof(*iter));
+	iter = __uma_zalloc(istate_cache, Q_WAITOK);
 	init_istate(iter, i_prt, t_prt, r_prt, init_int);
 	iter->timestamp = ticks; 
 	SLIST_INSERT_HEAD(istate_list, iter, i_list);

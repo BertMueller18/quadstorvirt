@@ -688,7 +688,7 @@ init_ddthread(int id)
 	struct ddthread *ddthread;
 	int retval;
 
-	ddthread = __uma_zalloc(ddthread_cache, Q_NOWAIT | Q_ZERO, sizeof(*ddthread));
+	ddthread = __uma_zalloc(ddthread_cache, Q_NOWAIT);
 	if (unlikely(!ddthread)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;

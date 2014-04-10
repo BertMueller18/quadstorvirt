@@ -469,13 +469,26 @@ uma_zcreate(const char *name, size_t size)
 }
 
 static void
-uma_zdestroy(const char *name, void *cachep)
+uma_zdestroy(void *cachep)
 {
 	slab_cache_destroy(cachep);
 }
 
-static void*
-uma_zalloc(uma_t *cachep, allocflags_t aflags, size_t len)
+static void *
+uma_zalloc(uma_t *cachep, allocflags_t aflags)
+{
+	int flags = (aflags & Q_NOWAIT_INTR) ? GFP_ATOMIC : GFP_NOIO;
+	int wait = (aflags & Q_WAITOK) ? 1 : 0;
+	void *ret;
+
+	while (!(ret = kmem_cache_zalloc(cachep, flags)) && wait)
+		msleep(1);
+
+	return ret;
+}
+
+static void *
+uma_alloc(uma_t *cachep, allocflags_t aflags)
 {
 	int flags = (aflags & Q_NOWAIT_INTR) ? GFP_ATOMIC : GFP_NOIO;
 	int wait = (aflags & Q_WAITOK) ? 1 : 0;
@@ -484,8 +497,6 @@ uma_zalloc(uma_t *cachep, allocflags_t aflags, size_t len)
 	while (!(ret = kmem_cache_alloc(cachep, flags)) && wait)
 		msleep(1);
 
-	if (ret && (aflags & Q_ZERO))
-		memset(ret, 0, len);
 	return ret;
 }
 
@@ -1443,6 +1454,7 @@ static struct qs_kern_cbs kcbs = {
 	.uma_zcreate		= uma_zcreate,
 	.uma_zdestroy		= uma_zdestroy,
 	.uma_zalloc		= uma_zalloc,
+	.uma_alloc		= uma_alloc,
 	.uma_zfree		= uma_zfree,
 	.zalloc			= __zalloc,
 	.malloc			= __malloc,
@@ -1879,21 +1891,21 @@ static void
 exit_caches(void)
 {
 	if (bpriv_cache)
-		uma_zdestroy("bpriv_cache", bpriv_cache);
+		uma_zdestroy(bpriv_cache);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
 	if (tpriv_cache)
-		uma_zdestroy("tpriv_cache", tpriv_cache);
+		uma_zdestroy(tpriv_cache);
 #endif
 
 	if (mtx_cache)
-		uma_zdestroy("mtx_cache", mtx_cache);
+		uma_zdestroy(mtx_cache);
 
 	if (sx_cache)
-		uma_zdestroy("sx_cache", sx_cache);
+		uma_zdestroy(sx_cache);
 
 	if (cv_cache)
-		uma_zdestroy("cv_cache", cv_cache);
+		uma_zdestroy(cv_cache);
 }
 
 static int

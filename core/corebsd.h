@@ -70,8 +70,8 @@ typedef struct uma_zone uma_t;
 typedef struct vnode iodev_t;
 typedef struct proc kproc_t;
 
-#define __uma_zalloc(cachep, aflags, len)	uma_zalloc(cachep, aflags)
-#define __uma_zdestroy(name, ucache)		uma_zdestroy(ucache)
+#define __uma_alloc(cachep, aflags)		uma_zalloc(cachep, aflags)
+#define __uma_zalloc(cachep, aflags)		uma_zalloc(cachep, (aflags | M_ZERO))
 #define sys_memset	memset
 
 extern uma_t *chan_cache;
@@ -102,7 +102,7 @@ mtx_alloc(char *name)
 {
 	mtx_t *mtx;
 
-	mtx = __uma_zalloc(mtx_cache, Q_WAITOK | Q_ZERO, sizeof(*mtx));
+	mtx = __uma_alloc(mtx_cache, Q_WAITOK);
 	mtx_init(mtx, name, NULL, MTX_DEF);
 	return mtx;
 }
@@ -130,7 +130,7 @@ sx_alloc(char *name)
 {
 	sx_t *sx;
 
-	sx = __uma_zalloc(sx_cache, Q_WAITOK | Q_ZERO, sizeof(*sx));
+	sx = __uma_alloc(sx_cache, Q_WAITOK);
 	sx_init(sx, name);
 	return sx;
 }
@@ -164,7 +164,7 @@ wait_chan_alloc(char *name)
 {
 	wait_chan_t *chan;
 
-	chan = __uma_zalloc(chan_cache, Q_WAITOK | Q_ZERO, sizeof(*chan));
+	chan = __uma_alloc(chan_cache, Q_WAITOK);
 	wait_chan_init(chan, name);
 	return chan;
 }
@@ -182,7 +182,7 @@ wait_completion_alloc(char *name)
 {
 	wait_compl_t *chan;
 
-	chan = __uma_zalloc(compl_cache, Q_WAITOK | Q_ZERO, sizeof(*chan));
+	chan = __uma_alloc(compl_cache, Q_WAITOK);
 	wait_compl_init(chan, name);
 	return chan;
 }

@@ -245,7 +245,7 @@ amap_table_write_bmap_set(struct amap_table *amap_table, int idx)
 
 	write_bmap = amap_table->write_bmap;
 	if (!write_bmap)
-		write_bmap = amap_table->write_bmap = __uma_zalloc(write_bmap_cache, Q_WAITOK | Q_ZERO, sizeof(*write_bmap));
+		write_bmap = amap_table->write_bmap = __uma_zalloc(write_bmap_cache, Q_WAITOK);
 	i = idx / 8;
 	j = idx % 8; 
 	write_bmap->bmap[i] |= (1 << j);
@@ -259,7 +259,7 @@ group_write_bmap_set(struct amap_table_group *group, int idx)
 
 	group_write_bmap = group->group_write_bmap;
 	if (!group_write_bmap)
-		group_write_bmap = group->group_write_bmap = __uma_zalloc(group_write_bmap_cache, Q_WAITOK | Q_ZERO, sizeof(*group_write_bmap));
+		group_write_bmap = group->group_write_bmap = __uma_zalloc(group_write_bmap_cache, Q_WAITOK);
 	i = idx / 8;
 	j = idx % 8; 
 	group_write_bmap->bmap[i] |= (1 << j);

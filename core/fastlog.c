@@ -151,7 +151,7 @@ log_page_alloc(allocflags_t flags, struct log_group *group, int group_idx)
 {
 	struct log_page *log_page;
 
-	log_page = __uma_zalloc(log_cache, Q_NOWAIT | Q_ZERO, sizeof(*log_page));
+	log_page = __uma_zalloc(log_cache, Q_NOWAIT);
 	if (unlikely(!log_page)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;
@@ -693,7 +693,7 @@ log_page_load_entries_v1(struct log_page *log_page, struct log_entry_list *log_e
 		if (!ENTRY_TARGET_ID(entry) && !ENTRY_NEW_BLOCK(entry))
 			continue;
 
-		log_entry = __uma_zalloc(log_entry_cache, Q_NOWAIT | Q_ZERO, sizeof(*log_entry));
+		log_entry = __uma_zalloc(log_entry_cache, Q_NOWAIT);
 		if (unlikely(!log_entry)) {
 			debug_warn("Slab allocation failure\n");
 			return -1;
@@ -728,7 +728,7 @@ log_page_load_entries_v2(struct log_page *log_page, struct log_entry_list *log_e
 		if (!V2_ENTRY_TARGET_ID(entry) && !V2_ENTRY_NEW_BLOCK(entry))
 			continue;
 
-		log_entry = __uma_zalloc(log_entry_cache, Q_NOWAIT | Q_ZERO, sizeof(*log_entry));
+		log_entry = __uma_zalloc(log_entry_cache, Q_NOWAIT);
 		if (unlikely(!log_entry)) {
 			debug_warn("Slab allocation failure\n");
 			return -1;

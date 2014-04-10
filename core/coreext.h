@@ -277,9 +277,10 @@ extern struct qs_kern_cbs kcbs;
 #endif
 #define malloc		(*kcbs.malloc)
 #define __uma_zalloc	(*kcbs.uma_zalloc)
+#define __uma_alloc	(*kcbs.uma_alloc)
 #define uma_zfree	(*kcbs.uma_zfree)
 #define uma_zcreate	(*kcbs.uma_zcreate)
-#define __uma_zdestroy	(*kcbs.uma_zdestroy)
+#define uma_zdestroy	(*kcbs.uma_zdestroy)
 #define get_availmem 	(*kcbs.get_availmem)
 #define mtx_alloc 	(*kcbs.mtx_alloc)
 #define mtx_free 	(*kcbs.mtx_free)
@@ -417,7 +418,7 @@ wait_chan_alloc(char *name)
 {
 	wait_chan_t *chan;
 
-	chan = __uma_zalloc(chan_cache, Q_WAITOK, sizeof(*chan));
+	chan = __uma_alloc(chan_cache, Q_WAITOK);
 	wait_chan_init(chan, name);
 	return chan;
 }
@@ -443,7 +444,7 @@ wait_completion_alloc(char *name)
 {
 	wait_compl_t *chan;
 
-	chan = __uma_zalloc(compl_cache, Q_WAITOK, sizeof(*chan));
+	chan = __uma_alloc(compl_cache, Q_WAITOK);
 	wait_compl_init(chan, name);
 	return chan;
 }

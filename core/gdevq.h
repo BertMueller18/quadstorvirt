@@ -202,7 +202,7 @@ gdevq_dedupe_insert(struct tdisk *tdisk, struct pgdata *pgdata, struct write_lis
 {
 	struct ddqueue *ddqueue;
 
-	ddqueue = __uma_zalloc(ddqueue_cache, Q_WAITOK, sizeof(*ddqueue));
+	ddqueue = __uma_alloc(ddqueue_cache, Q_WAITOK);
 	ddqueue->pgdata = pgdata;
 	ddqueue->wlist = wlist;
 	ddqueue->tdisk = tdisk;

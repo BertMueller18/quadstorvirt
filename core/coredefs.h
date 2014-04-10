@@ -355,7 +355,7 @@ pgdata_allocate(uint32_t num_blocks, allocflags_t flags)
 	}
 
 	for (i = 0; i < num_blocks; i++) {
-		pgtmp = __uma_zalloc(pgdata_cache, flags | Q_ZERO, sizeof(*pgtmp));
+		pgtmp = __uma_zalloc(pgdata_cache, flags);
 		if (unlikely(!pgtmp)) {
 			pglist_free(pglist, i);
 			return NULL;
@@ -388,8 +388,7 @@ pgdata_allocate_nopage(uint32_t num_blocks, allocflags_t flags)
 	}
 
 	for (i = 0; i < num_blocks; i++) {
-
-		pgtmp = __uma_zalloc(pgdata_cache, flags | Q_ZERO, sizeof(*pgtmp));
+		pgtmp = __uma_zalloc(pgdata_cache, flags);
 		if (unlikely(!pgtmp)) {
 			pglist_free(pglist, i);
 			return NULL;
@@ -428,7 +427,7 @@ ctio_free_data(struct qsio_scsiio *ctio)
 static inline struct qsio_scsiio *
 ctio_new(allocflags_t flags)
 {
-	return __uma_zalloc(ctio_cache, flags | Q_ZERO, sizeof(struct qsio_scsiio)); 
+	return __uma_zalloc(ctio_cache, flags);
 }
 
 void calc_sector_bits(uint32_t sector_size, uint32_t *sector_shift);
