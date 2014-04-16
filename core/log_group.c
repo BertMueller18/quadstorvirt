@@ -105,7 +105,6 @@ log_group_io(struct log_group *group, struct tcache **ret_tcache)
 	tcache->priv.logs = group->logs;
 	group->write_flags = 0;
 
-	iowaiters_move(&tcache->io_waiters, &group->io_waiters);
 	for (i = 0; i < LOG_GROUP_MAX_PAGES; i++) {
 		if (!atomic_test_bit(i, &tcache->write_flags))
 			continue;
@@ -119,6 +118,7 @@ log_group_io(struct log_group *group, struct tcache **ret_tcache)
 
 		log_page_lock(log_page);
 		atomic_set_bit_short(LOG_META_DATA_DIRTY, &log_page->flags);
+		log_page->log_id = write_id_incr(log_page->log_id, 1);
 		atomic_clear_bit_short(LOG_META_DATA_CLONED, &log_page->flags);
 		node_log_sync_send(log_page, tcache);
 		vm_pg_ref(log_page->metadata);
@@ -211,7 +211,6 @@ log_group_alloc(struct bdevint *bint, uint32_t group_id, uint64_t b_start)
 	log_group->bint = bint;
 	atomic_set(&log_group->refs, 1);
 	log_group->group_lock = sx_alloc("log group lock");
-	SLIST_INIT(&log_group->io_waiters);
 	return log_group;
 }
 

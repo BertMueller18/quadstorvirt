@@ -32,7 +32,6 @@ struct log_group {
 	struct log_page *logs[LOG_GROUP_MAX_PAGES];
 	sx_t *group_lock;
 	LIST_ENTRY(log_group) g_list;
-	struct iowaiter_list io_waiters;
 	int write_flags;
 	atomic_t pending_writes;
 	atomic_t refs;
@@ -75,34 +74,20 @@ log_group_start_writes(struct log_page *log)
 }
 
 static inline void
-log_end_writes(struct log_page *log, struct iowaiter *iowaiter)
+log_end_writes(struct log_page *log)
 {
-	struct iowaiter_list tmp_list;
 	struct log_group *group = log->group;
 
-	if (iowaiter) {
-		init_iowaiter(iowaiter);
-	}
-
-	SLIST_INIT(&tmp_list);
 	wait_on_chan_check(log->log_page_wait, !atomic_test_bit_short(LOG_META_DATA_DIRTY, &log->flags));
 	log_group_lock(group);
 	log_page_lock(log);
-	if (iowaiter)
-		SLIST_INSERT_HEAD(&log->io_waiters, iowaiter, w_list);
-	if (atomic_dec_and_test(&log->pending_writes)) {
+	if (atomic_dec_and_test(&log->pending_writes))
 		log_group_add_write_page(group, log);
-		iowaiters_merge(&tmp_list, &log->io_waiters);
-	}
 	log_page_unlock(log);
 
-	iowaiters_merge(&group->io_waiters, &tmp_list);
 	log_group_end_writes(group);
 	log_group_unlock(group);
 }
-
-#define log_end_wait(Lg, iwaitr)		iowaiter_end_wait((iwaitr))
-#define log_wait_for_done_io(Lg, iwaitr)	iowaiter_wait_for_done_io((iwaitr))
 
 static inline void
 log_start_writes(struct log_page *log)
@@ -135,14 +120,16 @@ log_list_end_writes(struct log_info_list *log_list)
 	struct log_info *log_info;
 
 	SLIST_FOREACH(log_info, log_list, l_list) {
-		log_end_writes(log_info->log_page, &log_info->iowaiter);
+		log_end_writes(log_info->log_page);
 	}
+}
 
-#if 0
-	SLIST_FOREACH(log_info, log_list, l_list) {
-		log_wait_for_done_io(log_info->log_page, &log_info->iowaiter);
-	}
-#endif
+static inline void
+log_info_end_wait(struct log_info *log_info)
+{
+	struct log_page *log_page = log_info->log_page;
+
+	wait_on_chan_check(log_page->log_page_wait, write_id_greater(log_page->log_id, log_info->log_id) || (log_page->log_id == log_info->log_id && !atomic_test_bit_short(LOG_META_DATA_DIRTY, &log_page->flags)));
 }
 
 static inline void
@@ -151,7 +138,7 @@ log_list_end_wait(struct log_info_list *log_list)
 	struct log_info *log_info;
 
 	SLIST_FOREACH(log_info, log_list, l_list) {
-		log_end_wait(log_info->log_page, &log_info->iowaiter);
+		log_info_end_wait(log_info);
 	}
 }
 

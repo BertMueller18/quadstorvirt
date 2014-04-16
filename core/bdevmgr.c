@@ -1495,7 +1495,6 @@ bint_alloc_for_pgdata(struct tdisk *tdisk, struct bdevint *bint, struct bintinde
 					index_get(index);
 					index_info->index = index;
 					index_info->index_write_id = index->write_id;
-					index_add_iowaiter(index, &index_info->iowaiter);
 					TAILQ_INSERT_TAIL(index_info_list, index_info, i_list);
 				}
 				index_mark_blocks(bint, index, (i - done), count, barriercheck);
@@ -1579,7 +1578,6 @@ found:
 
 	index_mark_blocks(bint, index, (i - done), count, 1);
 	atomic_set_bit(META_IO_PENDING, &index->flags);
-	index_add_iowaiter(index, &index_info->iowaiter);
 	index->check_idx = i + 1;
 
 	if (type == TYPE_DATA_BLOCK) {
@@ -1654,7 +1652,6 @@ bint_ref_block(struct bdevint *bint, struct bintindex *index, uint32_t entry, ui
 	atomic_set_bit(META_IO_PENDING, &index->flags);
 
 	BINT_STATS_ADD(bint, dedupe_blocks, 1);
-	index_add_iowaiter(index, &index_info->iowaiter);
 	index_get(index);
 	index_info->index = index;
 	index_info->index_write_id = index->write_id;
@@ -1748,9 +1745,9 @@ bdev_log_replay(struct bdevint *bint, uint64_t block, uint64_t index_write_id, u
 	}
 
 	index_info->index = index;
+	index_info->index_write_id = index->write_id;
 	debug_info("replay block %u %llu\n", bint->bid, (unsigned long long)block);
 	retval = bint_log_replay(bint, index, entry, size, type);
-	index_add_iowaiter(index, &index_info->iowaiter);
 	index_unlock(index);
 	TAILQ_INSERT_TAIL(index_info_list, index_info, i_list);
 	return retval;
@@ -4647,30 +4644,6 @@ bdev_get_disk_index_block(struct bdevint *bint, uint32_t target_id)
 }
 
 void
-index_info_list_free_error(struct index_info_list *index_info_list, int free)
-{
-	struct index_info *index_info, *next;
-
-	TAILQ_FOREACH_SAFE(index_info, index_info_list, i_list, next) {
-		index_lock(index_info->index);
-		if (iowaiter_done_io(&index_info->iowaiter)) {
-			index_unlock(index_info->index);
-			iowaiter_end_wait(&index_info->iowaiter);
-		}
-		else {
-			SLIST_REMOVE(&index_info->index->io_waiters, &index_info->iowaiter, iowaiter, w_list);
-			index_unlock(index_info->index);
-		}
-		if (!free)
-			continue;
-
-		TAILQ_REMOVE(index_info_list, index_info, i_list);
-		index_put(index_info->index);
-		index_info_free(index_info);
-	} 
-}
-
-void
 index_info_list_free_unmap(struct index_info_list *index_info_list)
 {
 	struct index_info *index_info;
@@ -4708,8 +4681,7 @@ __index_info_wait(struct index_info_list *index_info_list)
 
 	TAILQ_FOREACH_REVERSE(index_info, index_info_list, index_info_list, i_list) {
 		index = index_info->index;
-		if (index_info->iowaiter.chan)
-			index_end_wait(index, &index_info->iowaiter);
+		index_info_wait_io(index_info);
 
 		if (atomic_test_bit(META_DATA_ERROR, &index->flags)) {
 			debug_warn("Meta data error for index at %u:%llu\n", index->subgroup->group->bint->bid, (unsigned long long)bint_index_bstart(index->subgroup->group->bint, index->index_id));
@@ -4728,7 +4700,7 @@ index_info_wait(struct index_info_list *index_info_list)
 
 	TAILQ_FOREACH_REVERSE_SAFE(index_info, index_info_list, index_info_list, i_list, prev) {
 		index = index_info->index;
-		index_end_wait(index, &index_info->iowaiter);
+		index_info_wait_io(index_info);
 
 		if (atomic_test_bit(META_DATA_ERROR, &index->flags)) {
 			debug_warn("Meta data error for index at %u:%llu\n", index->subgroup->group->bint->bid, (unsigned long long)bint_index_bstart(index->subgroup->group->bint, index->index_id));
@@ -4818,10 +4790,8 @@ index_info_insert(struct index_sync_list *sync_list, struct index_info *index_in
 {
 	struct index_sync *index_sync;
 	struct bintindex *index;
-	struct iowaiter *iowaiter;
 
-	iowaiter = &index_info->iowaiter;
-	if (iowaiter_done_io(iowaiter))
+	if (!index_info_need_io(index_info))
 		return;
 
 	index = index_info->index;

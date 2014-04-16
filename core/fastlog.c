@@ -86,6 +86,7 @@ log_info_add(struct log_info_list *log_list, struct log_page *log_page)
 
 	log_info = zalloc(sizeof(struct log_info), M_LOG_INFO, Q_WAITOK);
 	log_info->log_page = log_page;
+	log_info->log_id = write_id_incr(log_page->log_id, 1);
 	log_group_start_writes(log_page);
 	atomic_inc(&log_page->pending_writes);
 	SLIST_INSERT_HEAD(log_list, log_info, l_list);
@@ -170,6 +171,7 @@ log_page_alloc(allocflags_t flags, struct log_group *group, int group_idx)
 	atomic_set(&log_page->refs, 1);
 	log_page->log_group_idx = group_idx;
 	log_page->group = group;
+	log_page->log_id = 1;
 	log_group_add_page(group, log_page);
 	return log_page;
 }
@@ -253,8 +255,7 @@ log_list_free_error(struct log_info_list *log_list)
 
 	while ((log_info = SLIST_FIRST(log_list)) != NULL) {
 		SLIST_REMOVE_HEAD(log_list, l_list);
-		log_end_writes(log_info->log_page, NULL);
-		free_iowaiter(&log_info->iowaiter);
+		log_end_writes(log_info->log_page);
 		free(log_info, M_LOG_INFO);
 	}
 }
@@ -266,7 +267,6 @@ fastlog_log_list_free(struct log_info_list *log_list)
 
 	while ((log_info = SLIST_FIRST(log_list)) != NULL) {
 		SLIST_REMOVE_HEAD(log_list, l_list);
-		free_iowaiter(&log_info->iowaiter);
 		free(log_info, M_LOG_INFO);
 	}
 }

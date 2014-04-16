@@ -220,6 +220,8 @@ int conn_free(struct iscsi_conn *conn)
 
 	del_timer_sync(&conn->nop_timer);
 	digest_cleanup(conn);
+	free(conn->write_iov, M_IETCONN);
+	free(conn->read_iov, M_IETCONN);
 	free(conn, M_IETCONN);
 
 	return 0;
@@ -228,15 +230,21 @@ int conn_free(struct iscsi_conn *conn)
 static int iet_conn_alloc(struct iscsi_session *session, struct conn_info *info)
 {
 	struct iscsi_conn *conn;
-#ifdef FREEBSD
-	int error;
-#endif
+	int error = -ENOMEM;
 
 	dprintk(D_SETUP, "%#Lx:%u\n", (unsigned long long) session->sid, info->cid);
 
 	conn = zalloc(sizeof(*conn), M_IETCONN, M_NOWAIT);
 	if (!conn)
 		return -ENOMEM;
+
+	conn->read_iov = zalloc(IOV_ARR_SIZE, M_IETCONN, M_NOWAIT);
+	if (!conn->read_iov)
+		goto err;
+
+	conn->write_iov = zalloc(IOV_ARR_SIZE, M_IETCONN, M_NOWAIT);
+	if (!conn->write_iov)
+		goto err;
 
 	conn->session = session;
 	conn->cid = info->cid;
@@ -245,10 +253,8 @@ static int iet_conn_alloc(struct iscsi_session *session, struct conn_info *info)
 
 	conn->hdigest_type = info->header_digest;
 	conn->ddigest_type = info->data_digest;
-	if (digest_init(conn) < 0) {
-		free(conn, M_IETCONN);
-		return -ENOMEM;
-	}
+	if (digest_init(conn) < 0)
+		goto err;
 
 	spin_lock_initt(&conn->list_lock, "conn list");
 	atomic_set(&conn->nr_cmnds, 0);
@@ -268,8 +274,7 @@ static int iet_conn_alloc(struct iscsi_session *session, struct conn_info *info)
 #endif
 	if (error != 0) {
 		DEBUG_WARN_NEW("failed to get fd %d\n", error);
-		free(conn, M_IETCONN);
-		return error;
+		goto err;
 	}
 
 #if __FreeBSD_version < 900041
@@ -280,8 +285,7 @@ static int iet_conn_alloc(struct iscsi_session *session, struct conn_info *info)
 	if (error != 0) {
 		DEBUG_WARN_NEW("failed to get sock %d\n", error);
 		fdrop(conn->file, curthread);
-		free(conn, M_IETCONN);
-		return error;
+		goto err;
 	}
 #endif
 	list_add(&conn->list, &session->conn_list);
@@ -295,6 +299,13 @@ static int iet_conn_alloc(struct iscsi_session *session, struct conn_info *info)
 	nthread_wakeup(conn->session->target);
 
 	return 0;
+err:
+	if (conn->write_iov)
+		free(conn->write_iov, M_IETCONN);
+	if (conn->read_iov)
+		free(conn->read_iov, M_IETCONN);
+	free(conn, M_IETCONN);
+	return error;
 }
 
 void conn_close(struct iscsi_conn *conn)

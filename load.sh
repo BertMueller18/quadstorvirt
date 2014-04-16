@@ -31,6 +31,7 @@ fi
 #sudo /sbin/modprobe netconsole netconsole=@10.0.13.7/eth0,@10.0.13.6/00:15:17:60:EF:CC
 #sudo /sbin/modprobe netconsole netconsole=@192.168.1.34/eth0,@192.168.1.88/00:15:17:60:EF:CC
 #sudo /bin/bash -c 'sudo echo 15 > /proc/sys/kernel/printk'
+/sbin/modprobe netconsole netconsole=@10.0.13.6/br0,@10.0.13.8/00:1D:09:04:19:C2
 sync
 sudo /quadstor/pgsql/etc/pgsql start
 

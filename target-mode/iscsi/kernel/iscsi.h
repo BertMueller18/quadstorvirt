@@ -183,7 +183,8 @@ enum connection_state_bit {
 	CONN_NEED_NOP_IN,
 };
 
-#define ISCSI_CONN_IOV_MAX	(((256 << 10) >> PAGE_SHIFT) + 1)
+#define ISCSI_CONN_IOV_MAX	256
+#define IOV_ARR_SIZE		(sizeof(struct iovec) * ISCSI_CONN_IOV_MAX)
 
 struct qsio_scsiio;
 struct qsio_accept_tio;
@@ -213,7 +214,7 @@ struct iscsi_conn {
 
 	struct iscsi_cmnd *read_cmnd;
 	struct msghdr read_msg;
-	struct iovec read_iov[ISCSI_CONN_IOV_MAX];
+	struct iovec *read_iov;
 	u32 read_size;
 	u32 read_overflow;
 	int read_state;
@@ -221,7 +222,7 @@ struct iscsi_conn {
 	struct qsio_scsiio *read_ctio;
 
 	struct iscsi_cmnd *write_cmnd;
-	struct iovec write_iov[ISCSI_CONN_IOV_MAX];
+	struct iovec *write_iov;
 	struct iovec *write_iop;
 	struct tio *write_tcmnd;
 	struct qsio_scsiio *ctio;

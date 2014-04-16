@@ -1533,7 +1533,7 @@ ddtable_set_node_block(struct ddtable *ddtable, struct pgdata *pgdata, struct bd
 
 	DD_INC(set_node_success, 1);
 	index_info = index_info_clone(pgdata->index_info);
-	index_add_iowaiter(index, &index_info->iowaiter);
+	index_info->index_write_id = index->write_id;
 	index_unlock(index);
 
 	ddtable_ddlookup_write_barrier(parent);

@@ -684,17 +684,38 @@ iscsi_create_sense_rsp(struct iscsi_cmnd *req, struct qsio_scsiio *ctio, uint32_
 void
 iscsi_cmnd_recv_pdu(struct iscsi_conn *conn, struct qsio_scsiio *ctio, u32 offset, __u32 size)
 {
+	struct pgdata **pglist, *pgtmp;
 	struct iscsi_cmnd *cmnd = conn->read_cmnd;
-	int read_pg_idx, read_pg_offset;
+	int read_pg_idx, read_pg_offset, max_length, done = 0;
+	int i, j;
 
 	conn->read_ctio = ctio;
 	conn->read_size = (size + 3) & -4;
 	conn->read_offset = offset;
 
+	if (!ctio->pglist_cnt)
+		return;
+
 	ctio_idx_offset(offset, &read_pg_idx, &read_pg_offset);
 	cmnd->orig_start_pg_idx = read_pg_idx;
 	cmnd->orig_start_pg_offset = read_pg_offset;
 	cmnd->orig_read_size = size;
+	pglist = (struct pgdata **)(ctio->data_ptr);
+	for (i = read_pg_idx, j = 0; i < ctio->pglist_cnt; i++) {
+		pgtmp = pglist[i];
+		max_length = pgtmp->pg_len - read_pg_offset;
+		if (max_length > (conn->read_size - done))
+			max_length = (conn->read_size - done);
+
+		conn->read_iov[j].iov_base = (u8 *)pgdata_page_address(pgtmp) + pgtmp->pg_offset + read_pg_offset;
+		conn->read_iov[j++].iov_len = max_length;
+		done += max_length;
+		read_pg_offset = 0;
+		if (done == conn->read_size)
+			break; 
+	}
+	conn->read_msg.msg_iov = conn->read_iov;
+	conn->read_msg.msg_iovlen = j;
 }
 
 static void
@@ -915,13 +936,6 @@ read_ctio_skip_data(struct iscsi_conn *conn)
 static inline int
 do_recv_pglist(struct iscsi_conn *conn)
 {
-	struct qsio_scsiio *ctio = conn->read_ctio; 
-	struct pgdata **pglist = (struct pgdata **)(ctio->data_ptr);
-	struct pgdata *pgtmp;
-	int i, j;
-	int pg_offset;
-	int max_length;
-	__u32 done = 0;
 #ifdef LINUX
 	struct msghdr msg;
 	mm_segment_t oldfs;
@@ -929,8 +943,9 @@ do_recv_pglist(struct iscsi_conn *conn)
 	struct uio uio;
 	int flags = MSG_DONTWAIT | MSG_NOSIGNAL;
 #endif
-	int res;
+	int res, start_len, iov_done;
 
+#if 0
 	ctio_idx_offset(conn->read_offset, &i, &pg_offset);
 	for (j = 0; (i < ctio->pglist_cnt && j < ISCSI_CONN_IOV_MAX); i++)
 	{
@@ -949,24 +964,22 @@ do_recv_pglist(struct iscsi_conn *conn)
 		if (done == conn->read_size)
 			break; 
 	}
+#endif
 
+	start_len = conn->read_msg.msg_iov[0].iov_len;
 #ifdef LINUX
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	msg.msg_iov = conn->read_iov;
-	msg.msg_iovlen = j;
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-	msg.msg_flags = MSG_DONTWAIT | MSG_NOSIGNAL;
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov = conn->read_msg.msg_iov;
+	msg.msg_iovlen = conn->read_msg.msg_iovlen;
 
 	oldfs = get_fs();
 	set_fs(get_ds());
-	res = sock_recvmsg(conn->sock, &msg, done, MSG_DONTWAIT | MSG_NOSIGNAL);
+	res = sock_recvmsg(conn->sock, &msg, conn->read_size, MSG_DONTWAIT | MSG_NOSIGNAL);
 	set_fs(oldfs);
 #else
-	uio_fill(&uio, conn->read_iov, j, done, UIO_READ);
+	uio_fill(&uio, conn->read_msg.msg_iov, conn->read_msg.msg_iovlen, conn->read_size, UIO_READ);
 	res = soreceive(conn->sock, NULL, &uio, NULL, NULL, &flags);
-	map_result(&res, &uio, done, 0);
+	map_result(&res, &uio, conn->read_size, 0);
 #endif
 
 	if (res <= 0)
@@ -987,6 +1000,12 @@ do_recv_pglist(struct iscsi_conn *conn)
 
 	conn->read_size -= res;
 	conn->read_offset += res;
+	if (res < start_len)
+		return res;
+
+	iov_done = ((res - start_len) >> LBA_SHIFT) + 1;
+	conn->read_msg.msg_iov += iov_done;
+	conn->read_msg.msg_iovlen -= iov_done;
 	return res;
 }
 

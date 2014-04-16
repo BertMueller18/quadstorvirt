@@ -118,7 +118,7 @@ process_delete_block(struct ddtable *ddtable, uint64_t old_block, struct index_i
 	struct index_info *index_info = NULL;
 	struct ddtable_ddlookup_node *ddlookup = NULL;
 	int freed;
-	uint64_t index_id;
+	uint64_t index_id, write_id;
 #ifdef ENABLE_STATS
 	uint32_t start_ticks, tmp_ticks;
 #endif
@@ -192,6 +192,7 @@ process_delete_block(struct ddtable *ddtable, uint64_t old_block, struct index_i
 				atomic_set_bit(META_DATA_UNMAP, &index->flags);
 			rcache_remove(old_block);
 		}
+		write_id = index->write_id;
 		index_unlock(index);
 
 		if (freed)
@@ -200,8 +201,10 @@ process_delete_block(struct ddtable *ddtable, uint64_t old_block, struct index_i
 			index_sync_insert(index_sync_list, index);
 			index_put(index);
 		}
-		else
+		else {
+			index_info->index_write_id = write_id;
 			TAILQ_INSERT_TAIL(index_info_list, index_info, i_list);
+		}
 		DD_TEND(process_delete_block_ticks, start_ticks);
 		return;
 	}
@@ -238,6 +241,7 @@ process_delete_block(struct ddtable *ddtable, uint64_t old_block, struct index_i
 		if (index->free_blocks == BMAP_ENTRIES_UNCOMP && bint_unmap_supported(bint))
 			atomic_set_bit(META_DATA_UNMAP, &index->flags);
 	}
+	write_id = index->write_id;
 	index_unlock(index);
 
 	if (ddlookup) {
@@ -248,8 +252,10 @@ process_delete_block(struct ddtable *ddtable, uint64_t old_block, struct index_i
 	if (freed)
 		bdev_add_to_alloc_list(bint);
 
-	if (index_info)
+	if (index_info) {
+		index_info->index_write_id = write_id;
 		TAILQ_INSERT_TAIL(index_info_list, index_info, i_list);
+	}
 	else
 		index_put(index);
 	DD_TEND(process_delete_free_block_ticks, start_ticks);
