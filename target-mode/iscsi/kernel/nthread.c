@@ -128,7 +128,7 @@ static int do_recv(struct iscsi_conn *conn, int state)
 	int flags = MSG_DONTWAIT | MSG_NOSIGNAL;
 #endif
 	struct msghdr msg;
-	struct iovec iov[ISCSI_CONN_IOV_MAX >> 4];
+	struct iovec iov[16];
 	int i, len, res;
 
 	if (!test_bit(CONN_ACTIVE, &conn->state)) {
@@ -152,7 +152,7 @@ static int do_recv(struct iscsi_conn *conn, int state)
 	}
 
 	msg.msg_iov = iov;
-	msg.msg_iovlen = min_t(size_t, conn->read_msg.msg_iovlen, ISCSI_CONN_IOV_MAX >> 4);
+	msg.msg_iovlen = min_t(size_t, conn->read_msg.msg_iovlen, 16);
 	for (i = 0, len = 0; i < msg.msg_iovlen; i++) {
 		iov[i] = conn->read_msg.msg_iov[i];
 		len += iov[i].iov_len;

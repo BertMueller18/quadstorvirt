@@ -55,6 +55,7 @@ struct raw_log_page_v3 {
 
 struct log_page {
 	uint64_t write_id;
+	uint64_t log_id;
 	pagestruct_t *metadata;
 	struct log_group *group;
 	TAILQ_ENTRY(log_page) g_list;
@@ -152,7 +153,7 @@ v2_log_entry_set_block(struct v2_log_entry *entry, uint64_t new_block, uint16_t 
 struct log_info {
 	struct log_page *log_page;
 	SLIST_ENTRY(log_info) l_list;
-	struct iowaiter iowaiter;
+	uint64_t log_id;
 };
 SLIST_HEAD(log_info_list, log_info);
 

@@ -251,11 +251,34 @@ struct index_info {
 	uint64_t index_write_id;
 	TAILQ_ENTRY(index_info) i_list;
 	struct log_page *log_page;
-	struct iowaiter iowaiter;
 	int16_t log_offset;
 	int16_t meta_type;
 };
 TAILQ_HEAD(index_info_list, index_info);
+
+static inline void
+index_info_wait_io(struct index_info *index_info)
+{
+	struct bintindex *index;
+	uint64_t write_id = write_id_incr(index_info->index_write_id, 1);
+
+	debug_check(!index_info->index_write_id);
+	index = index_info->index;
+	wait_on_chan_check(index->index_wait, write_id_greater(index->write_id, write_id) || (index->write_id == write_id && !atomic_test_bit(META_DATA_DIRTY, &index->flags)));
+}
+
+static inline int
+index_info_need_io(struct index_info *index_info)
+{
+	struct bintindex *index;
+
+	index = index_info->index;
+	debug_check(!index_info->index_write_id);
+	if (write_id_greater(index->write_id, index_info->index_write_id))
+		return 0;
+	else
+		return 1;
+}
 
 extern uint64_t qs_availmem;
 
@@ -513,7 +536,6 @@ int bint_unmark_index_full(struct bintindex *index);
 static inline void
 index_info_free(struct index_info *index_info)
 {
-	free_iowaiter(&index_info->iowaiter);
 	uma_zfree(index_info_cache, index_info);
 }
 
@@ -553,7 +575,6 @@ index_info_clone(struct index_info *index_info)
 
 void index_info_list_free(struct index_info_list *index_info_list);
 void index_info_list_free_unmap(struct index_info_list *index_info_list);
-void index_info_list_free_error(struct index_info_list *index_info_list, int free);
 int bdev_alloc_for_pgdata(struct tdisk *tdisk, struct pgdata_wlist *alloc_list, struct index_info_list *index_info_list, uint32_t size, struct bdevint **ret_bint);
 
 static inline int
@@ -858,7 +879,6 @@ index_end_writes(struct bintindex *index, int incr)
 	index_lock(index);
 	if (atomic_dec_and_test(&index->pending_writes)) {
 		subgroup_add_write_index(subgroup, index);
-		mark_io_waiters(&index->io_waiters);
 		iowaiters_move(&tmp_list, &index->io_waiters);
 	}
 	index_unlock(index);
@@ -878,13 +898,6 @@ struct bintindex * bint_get_index(struct bdevint *bint, uint32_t index_id);
 struct bintindex * bint_locate_index(struct bdevint *bint, uint32_t index_id, struct index_info_list *index_info_list);
 
 static inline void
-index_add_iowaiter(struct bintindex *index, struct iowaiter *iowaiter)
-{
-	init_iowaiter(iowaiter);
-	SLIST_INSERT_HEAD(&index->io_waiters, iowaiter, w_list);
-}
-
-static inline void
 index_info_sync(struct bintindex *index, struct index_info *index_info)
 {
 	struct iowaiter iowaiter;
@@ -893,7 +906,6 @@ index_info_sync(struct bintindex *index, struct index_info *index_info)
 	index_start_writes(index, &iowaiter);
 	index_end_writes(index, 1);
 	index_end_wait(index, &iowaiter);
-	index_end_wait(index, &index_info->iowaiter);
 	free_iowaiter(&iowaiter);
 }
 

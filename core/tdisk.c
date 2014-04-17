@@ -1809,7 +1809,6 @@ tdisk_initialize_index(struct tdisk *tdisk, uint8_t *name)
 		}
 
 		index_info_sync(index_info.index, &index_info);
-		free_iowaiter(&index_info.iowaiter);
 		index_put(index_info.index);
 
 		SET_BLOCK(raw_data->table_pad[i], b_start, bint->bid);
@@ -1973,7 +1972,6 @@ tdisk_reinitialize_index(struct tdisk *tdisk, uint64_t new_size, int update_size
 		}
 
 		index_info_sync(index_info.index, &index_info);
-		free_iowaiter(&index_info.iowaiter);
 		index_put(index_info.index);
 
 		SET_BLOCK(raw_data->table_pad[i], b_start, bint->bid);
@@ -5265,7 +5263,7 @@ pgdata_reset_ddblock(struct pgdata *pgdata, struct write_list *wlist)
 	index_check_load(index);
 	index_write_barrier(bint, index);
 	bint_free_block(bint, index, entry_id, lba_block_size(pgdata->amap_block), &freed, TYPE_DATA_BLOCK, 0);
-	index_add_iowaiter(index, &new->iowaiter);
+	new->index_write_id = index->write_id;
 	index_unlock(index);
 	TAILQ_INSERT_TAIL(&wlist->index_info_list, new, i_list);
 	pgdata->index_info = NULL;
@@ -6242,15 +6240,13 @@ tdisk_write_error(struct tdisk *tdisk, struct qsio_scsiio *ctio, struct write_li
 	if (atomic_test_bit(WLIST_DONE_PGDATA_SYNC_START, &wlist->flags))
 		node_pgdata_sync_complete(tdisk, wlist->transaction_id);
 
-	index_info_list_free_error(&wlist->index_info_list, 1);
-	index_info_list_free_error(&wlist->meta_index_info_list, 0);
-
 	if (atomic_test_bit(WLIST_DONE_LOG_END, &wlist->flags)) {
 		log_list_end_wait(&wlist->log_list);
 		log_list_start_writes(&wlist->log_list);
 	}
 
 	fastlog_clear_transactions(tdisk, (struct pgdata **)(ctio->data_ptr), ctio->pglist_cnt, &wlist->meta_index_info_list, wlist->log_reserved, 1);
+	index_info_list_free(&wlist->index_info_list);
 	index_info_list_free(&wlist->meta_index_info_list);
 
 	if (atomic_test_bit(WLIST_DONE_LOG_START, &wlist->flags)) {
