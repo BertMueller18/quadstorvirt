@@ -94,13 +94,13 @@ biot_alloc(struct bdevint *bint, uint64_t b_start, void *cache)
 {
 	struct biot *biot;
 
-	biot = __uma_zalloc(biot_cache, Q_NOWAIT | Q_ZERO, sizeof(*biot));
+	biot = __uma_zalloc(biot_cache, Q_NOWAIT);
 	if (unlikely(!biot)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;
 	}
 
-	biot->pages = __uma_zalloc(biot_page_cache, Q_NOWAIT, ((MAXPHYS >> LBA_SHIFT) * sizeof(pagestruct_t *)));
+	biot->pages = __uma_alloc(biot_page_cache, Q_NOWAIT);
 	if (unlikely(!biot->pages)) {
 		debug_warn("Slab allocation failure\n");
 		uma_zfree(biot_cache, biot);

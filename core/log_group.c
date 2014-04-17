@@ -200,7 +200,7 @@ log_group_alloc(struct bdevint *bint, uint32_t group_id, uint64_t b_start)
 {
 	struct log_group *log_group;
 
-	log_group = __uma_zalloc(log_group_cache, Q_NOWAIT | Q_ZERO, sizeof(*log_group));
+	log_group = __uma_zalloc(log_group_cache, Q_NOWAIT);
 	if (unlikely(!log_group)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;

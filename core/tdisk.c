@@ -154,25 +154,6 @@ amap_table_group_free(struct amap_table_group *group)
 }
 
 void
-tdisk_reset_stats(uint32_t target_id)
-{
-#ifdef ENABLE_STATS
-	struct tdisk *tdisk;
-	uint8_t *ptr;
-	int todo = sizeof(struct tdisk) - offsetof(struct tdisk, pgalloc_hits);
-
-	tdisk = tdisk_locate(target_id);
-	if (!tdisk)
-		return;
-
-	ptr  = (uint8_t *)(tdisk) + offsetof(struct tdisk, pgalloc_hits);
-	tdisk_print_stats(tdisk);
-	bzero(ptr, todo);
-	tdisk_put(tdisk);
-#endif
-}
-
-void
 tdisk_print_stats(struct tdisk *tdisk)
 {
 #ifdef CUSTOM_BIO_STATS
@@ -1288,7 +1269,7 @@ target_load_disk(struct tdisk_info *tdisk_info, unsigned long arg)
 		}
 	}
 
-	tdisk = __uma_zalloc(tdisk_cache, Q_NOWAIT | Q_ZERO, sizeof(*tdisk));
+	tdisk = __uma_zalloc(tdisk_cache, Q_NOWAIT);
 	if (unlikely(!tdisk)) {
 		debug_warn("Slab allocation failure\n");
 		return -1;
@@ -1359,13 +1340,13 @@ amap_table_alloc(struct tdisk *tdisk, uint32_t amap_table_id)
 {
 	struct amap_table *amap_table;
 
-	amap_table = __uma_zalloc(amap_table_cache, Q_NOWAIT | Q_ZERO, sizeof(*amap_table));
+	amap_table = __uma_zalloc(amap_table_cache, Q_NOWAIT);
 	if (unlikely(!amap_table)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;
 	}
 
-	amap_table->amap_index = __uma_zalloc(amap_index_cache, Q_NOWAIT | Q_ZERO, (AMAPS_PER_AMAP_TABLE * sizeof(struct amap *)));
+	amap_table->amap_index = __uma_zalloc(amap_index_cache, Q_NOWAIT);
 	if (unlikely(!amap_table->amap_index)) {
 		debug_warn("Memory allocation failure\n");
 		uma_zfree(amap_table_cache, amap_table);
@@ -1393,14 +1374,14 @@ amap_table_group_alloc(struct tdisk *tdisk, uint32_t group_offset, uint32_t amap
 	}
 
 	debug_info("alloc group at %u amap table max %u\n", group_offset, amap_table_max);
-	group = __uma_zalloc(amap_table_group_cache, Q_NOWAIT | Q_ZERO, sizeof(*group));
+	group = __uma_zalloc(amap_table_group_cache, Q_NOWAIT);
 	if (unlikely(!group)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;
 	}
 
 	group->amap_table_max = amap_table_max;
-	group->amap_table = __uma_zalloc(fourk_cache, Q_NOWAIT | Q_ZERO, 4096);
+	group->amap_table = __uma_zalloc(fourk_cache, Q_NOWAIT);
 	if (unlikely(!group->amap_table)) {
 		debug_warn("Slab allocation failure\n");
 		uma_zfree(amap_table_group_cache, group);
@@ -2210,7 +2191,7 @@ target_new_disk(struct tdisk_info *tdisk_info, unsigned long arg)
 		return -1;
 	}
 
-	tdisk = __uma_zalloc(tdisk_cache, Q_NOWAIT | Q_ZERO, sizeof(*tdisk));
+	tdisk = __uma_zalloc(tdisk_cache, Q_NOWAIT);
 	if (unlikely(!tdisk))
 	{
 		debug_warn("Slab allocation failure\n");
@@ -3796,7 +3777,7 @@ pgdata_post_read_io(struct pgdata **pglist, int pglist_cnt, struct rcache_entry_
 		}
 		comp_pgdata = NULL;
 		if (save_comp) {
-			comp_pgdata = __uma_zalloc(pgdata_cache, Q_WAITOK | Q_ZERO, sizeof(*comp_pgdata));
+			comp_pgdata = __uma_zalloc(pgdata_cache, Q_WAITOK);
 			comp_pgdata->completion = wait_completion_alloc("pgdata compl");
 			comp_pgdata->page = pgdata->page;
 			comp_pgdata->pg_len = block_size;
@@ -3972,7 +3953,7 @@ tdisk_add_lba_write(struct tdisk *tdisk, uint64_t lba, uint32_t transfer_length,
 		return NULL;
 #endif
 
-	lba_write = __uma_zalloc(lba_write_cache, Q_WAITOK | Q_ZERO, sizeof(*lba_write));
+	lba_write = __uma_zalloc(lba_write_cache, Q_WAITOK);
 	if (tdisk->lba_shift != LBA_SHIFT) {
 		lba_diff = (lba - (lba & ~0x7ULL));
 		transfer_length += lba_diff;
@@ -4572,7 +4553,7 @@ amap_sync_alloc(struct amap *amap, uint64_t write_id)
 {
 	struct amap_sync *amap_sync;
 
-	amap_sync = __uma_zalloc(amap_sync_cache, Q_WAITOK | Q_ZERO, sizeof(*amap_sync));
+	amap_sync = __uma_zalloc(amap_sync_cache, Q_WAITOK);
 	STAILQ_INIT(&amap_sync->pgdata_list);
 	amap_get(amap);
 	amap_sync->amap = amap;
@@ -4656,7 +4637,7 @@ sync_amap_list_pre(struct tdisk *tdisk, struct write_list *wlist)
 	struct amap_sync *amap_sync;
 	struct amap *amap;
 	iodev_t *prev_b_dev = NULL;
-	struct tpriv priv = { 0 };
+	struct tpriv priv;
 	int done_io;
 
 	if (atomic_test_bit(WLIST_DONE_AMAP_SYNC, &wlist->flags))
@@ -5224,7 +5205,7 @@ pgdata_post_write(struct tdisk *tdisk, struct pgdata **pglist, int pglist_cnt, s
 	if (SLIST_EMPTY(&wlist->amap_sync_list))
 		goto reset;
 
-	ddwork = __uma_zalloc(ddwork_cache, Q_WAITOK | Q_ZERO, sizeof(*ddwork));
+	ddwork = __uma_zalloc(ddwork_cache, Q_WAITOK);
 	tdisk_get(tdisk);
 	ddwork->tdisk = tdisk;
 	ddwork->log_list.slh_first = wlist->log_list.slh_first;
@@ -5508,7 +5489,7 @@ tdisk_add_alloc_lba_write(uint64_t lba_start, wait_chan_t *chan, struct lba_list
 {
 	struct lba_write *iter, *lba_alloc;
 
-	lba_alloc = __uma_zalloc(lba_write_cache, Q_WAITOK | Q_ZERO, sizeof(*lba_alloc));
+	lba_alloc = __uma_zalloc(lba_write_cache, Q_WAITOK);
 	lba_alloc->lba_start = lba_start;
 	lba_alloc->flags = flags;
 
@@ -6807,7 +6788,7 @@ ctio_realloc_pglist(struct qsio_scsiio *ctio, struct pgdata *ref_page, uint32_t 
 	}
 
 	for (i = 0; i < num_blocks; i++) {
-		pgtmp = __uma_zalloc(pgdata_cache, Q_NOWAIT | Q_ZERO, sizeof(*pgtmp));
+		pgtmp = __uma_zalloc(pgdata_cache, Q_NOWAIT);
 		if (unlikely(!pgtmp)) {
 			debug_warn("Slab allocation failure\n");
 			pglist_free(pglist, i);

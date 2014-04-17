@@ -769,7 +769,7 @@ index_alloc(struct index_subgroup *subgroup, uint32_t index_id, allocflags_t fla
 {
 	struct bintindex *index;
 
-	index = __uma_zalloc(index_cache, Q_NOWAIT | Q_ZERO, sizeof(*index));
+	index = __uma_zalloc(index_cache, Q_NOWAIT);
 	if (unlikely(!index)) {
 		debug_warn("Memory allocation failure\n");
 		return NULL;
@@ -911,19 +911,6 @@ extern uint32_t ddlookup_reads;
 extern uint32_t ddtable_reads;
 extern uint32_t log_reads;
 extern uint32_t tdisk_index_reads;
-
-void
-bint_reset_stats(struct bdevint *bint)
-{
-#ifdef ENABLE_STATS
-	bint->index_writes = bint->index_reads = 0;
-	bint->fast_lookups = bint->slow_lookups = bint->fast_size = bint->slow_size = 0;
-	bint->index_waits = 0;
-	bio_reads = bio_read_size = bio_writes = bio_write_size = 0;
-	index_lookup_writes = index_writes = bint_writes = amap_table_writes = amap_writes = ddlookup_writes = ddtable_writes = log_writes = tdisk_index_writes = 0;
-	index_lookup_reads = index_reads = bint_reads = amap_table_reads = amap_reads = ddlookup_reads = ddtable_reads = log_reads = tdisk_index_reads = 0;
-#endif
-}
 
 static void
 bint_clear(struct bdevint *bint)
@@ -2577,7 +2564,7 @@ index_subgroup_alloc(struct index_group *group, uint32_t subgroup_id)
 	struct index_subgroup *subgroup;
 	int i;
 
-	subgroup = __uma_zalloc(subgroup_cache, Q_NOWAIT | Q_ZERO, sizeof(*subgroup));
+	subgroup = __uma_zalloc(subgroup_cache, Q_NOWAIT);
 	if (unlikely(!subgroup)) {
 		debug_warn("Memory allocation failure\n");
 		return NULL;
@@ -2603,7 +2590,7 @@ index_lookup_alloc(struct index_group *group)
 {
 	struct index_lookup *ilookup;
 
-	ilookup = __uma_zalloc(index_lookup_cache, Q_NOWAIT | Q_ZERO, sizeof(*ilookup));
+	ilookup = __uma_zalloc(index_lookup_cache, Q_NOWAIT);
 	if (unlikely(!ilookup)) {
 		debug_warn("Memory allocation failure\n");
 		return NULL;
@@ -2630,7 +2617,7 @@ index_group_alloc(struct bdevint *bint, uint32_t group_id)
 	struct index_group *group;
 	int max_indexes;
 
-	group = __uma_zalloc(group_cache, Q_NOWAIT | Q_ZERO, sizeof(*group));
+	group = __uma_zalloc(group_cache, Q_NOWAIT);
 	if (unlikely(!group)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;
@@ -2647,7 +2634,7 @@ index_group_alloc(struct bdevint *bint, uint32_t group_id)
 		group->max_subgroups++;
 
 	debug_check(group->max_subgroups > INDEX_GROUP_MAX_SUBGROUPS);
-	group->subgroups = __uma_zalloc(subgroup_index_cache, Q_NOWAIT | Q_ZERO, INDEX_GROUP_MAX_SUBGROUPS * sizeof(struct index_subgroup *));
+	group->subgroups = __uma_zalloc(subgroup_index_cache, Q_NOWAIT);
 	if (unlikely(!group->subgroups)) {
 		debug_warn("Memory allocation failure\n");
 		uma_zfree(group_cache, group);
@@ -4818,7 +4805,7 @@ index_sync_insert(struct index_sync_list *sync_list, struct bintindex *index)
 			return;
 	}
 
-	index_sync = __uma_zalloc(index_sync_cache, Q_WAITOK | Q_ZERO, sizeof(*index_sync));
+	index_sync = __uma_zalloc(index_sync_cache, Q_WAITOK);
 	index_get(index);
 	index_sync->index = index;
 	index_start_writes(index, &index_sync->iowaiter);
@@ -4844,7 +4831,7 @@ index_info_insert(struct index_sync_list *sync_list, struct index_info *index_in
 			return;
 	}
 
-	index_sync = __uma_zalloc(index_sync_cache, Q_WAITOK | Q_ZERO, sizeof(*index_sync));
+	index_sync = __uma_zalloc(index_sync_cache, Q_WAITOK);
 	index_get(index);
 	index_sync->index = index;
 	index_start_writes(index, &index_sync->iowaiter);

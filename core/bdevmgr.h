@@ -478,7 +478,6 @@ void bint_index_free(struct bintindex *index);
 uint64_t bdev_get_disk_index_block(struct bdevint *bint, uint32_t target_id);
 int bint_log_replay(struct bdevint *bint, struct bintindex *index, uint32_t entry, uint32_t size, int type);
 
-void bint_reset_stats(struct bdevint *bint);
 static inline uint64_t
 bint_index_bstart(struct bdevint *bint, uint32_t index_id)
 {
@@ -531,7 +530,7 @@ index_info_alloc(void)
 {
 	struct index_info *index_info;
 
-	index_info = __uma_zalloc(index_info_cache, Q_NOWAIT | Q_ZERO, sizeof(*index_info));
+	index_info = __uma_zalloc(index_info_cache, Q_NOWAIT);
 	if (unlikely(!index_info)) {
 		debug_warn("Memory allocation failure\n");
 		return NULL;

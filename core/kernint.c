@@ -231,171 +231,171 @@ exit_caches(void)
 {
 	debug_info("group_write_bmap_cache_free\n");
 	if (group_write_bmap_cache)
-		__uma_zdestroy("qs_group_write_bmap", group_write_bmap_cache);
+		uma_zdestroy(group_write_bmap_cache);
 
 	debug_info("write_bmap_cache_free\n");
 	if (write_bmap_cache)
-		__uma_zdestroy("qs_write_bmap", write_bmap_cache);
+		uma_zdestroy(write_bmap_cache);
 
 	debug_info("node_msg_cache_free\n");
 	if (node_msg_cache)
-		__uma_zdestroy("qs_node_msg", node_msg_cache);
+		uma_zdestroy(node_msg_cache);
 
 	debug_info("node_sync_post_cache_free\n");
 	if (node_sync_post_cache)
-		__uma_zdestroy("qs_node_sync_post", node_sync_post_cache);
+		uma_zdestroy(node_sync_post_cache);
 
 	debug_info("node_sock_cache_free\n");
 	if (node_sock_cache)
-		__uma_zdestroy("qs_node_sock", node_sock_cache);
+		uma_zdestroy(node_sock_cache);
 
 	debug_info("node_comm_cache_free\n");
 	if (node_comm_cache)
-		__uma_zdestroy("qs_node_comm", node_comm_cache);
+		uma_zdestroy(node_comm_cache);
 
 	debug_info("tcache_cache_free\n");
 	if (tcache_cache)
-		__uma_zdestroy("qs_tcache", tcache_cache);
+		uma_zdestroy(tcache_cache);
 
 	debug_info("ddqueue_cache_free\n");
 	if (ddqueue_cache)
-		__uma_zdestroy("qs_ddqueue", ddqueue_cache);
+		uma_zdestroy(ddqueue_cache);
 
 	debug_info("ctio_cache_free\n");
 	if (ctio_cache)
-		__uma_zdestroy("qs_ctio", ctio_cache);
+		uma_zdestroy(ctio_cache);
 
 	debug_info("pgdata_cache_free\n");
 	if (pgdata_cache)
-		__uma_zdestroy("qs_pgdata", pgdata_cache);
+		uma_zdestroy(pgdata_cache);
 
 	debug_info("index_info_cache_free\n");
 	if (index_info_cache)
-		__uma_zdestroy("qs_index_info", index_info_cache);
+		uma_zdestroy(index_info_cache);
 
 	debug_info("index_sync_cache_free\n");
 	if (index_sync_cache)
-		__uma_zdestroy("qs_index_sync", index_sync_cache);
+		uma_zdestroy(index_sync_cache);
 
 	debug_info("log_cache_free\n");
 	if (log_cache)
-		__uma_zdestroy("qs_log", log_cache);
+		uma_zdestroy(log_cache);
 
 	debug_info("hash_cache_free\n");
 	if (hash_cache)
-		__uma_zdestroy("qs_hash", hash_cache);
+		uma_zdestroy(hash_cache);
 
 	debug_info("gdevq_cache_free\n");
 	if (gdevq_cache)
-		__uma_zdestroy("qs_gdevq", gdevq_cache);
+		uma_zdestroy(gdevq_cache);
 
 	debug_info("ddthread_cache_free\n");
 	if (ddthread_cache)
-		__uma_zdestroy("qs_ddthread", ddthread_cache);
+		uma_zdestroy(ddthread_cache);
 
 	debug_info("tdisk_cache_free\n");
 	if (tdisk_cache)
-		__uma_zdestroy("qs_tdisk", tdisk_cache);
+		uma_zdestroy(tdisk_cache);
 
 	debug_info("4k_cache_free\n");
 	if (fourk_cache)
-		__uma_zdestroy("qs_4k", fourk_cache);
+		uma_zdestroy(fourk_cache);
 
 	debug_info("8k_cache_free\n");
 	if (eightk_cache)
-		__uma_zdestroy("qs_8k", eightk_cache);
+		uma_zdestroy(eightk_cache);
 
 	debug_info("log_entry_cache_free\n");
 	if (log_entry_cache)
-		__uma_zdestroy("qs_log_entry", log_entry_cache);
+		uma_zdestroy(log_entry_cache);
 
 	debug_info("log_group_cache_free\n");
 	if (log_group_cache)
-		__uma_zdestroy("qs_log_group", log_group_cache);
+		uma_zdestroy(log_group_cache);
 
 	debug_info("rcache_entry_cache_free\n");
 	if (rcache_entry_cache)
-		__uma_zdestroy("qs_rcache_entry", rcache_entry_cache);
+		uma_zdestroy(rcache_entry_cache);
 
 	debug_info("ddwork_cache_free\n");
 	if (ddwork_cache)
-		__uma_zdestroy("qs_ddwork", ddwork_cache);
+		uma_zdestroy(ddwork_cache);
 
 	debug_info("subgroup_cache_free\n");
 	if (subgroup_cache)
-		__uma_zdestroy("qs_subgroup", subgroup_cache);
+		uma_zdestroy(subgroup_cache);
 
 	debug_info("group_cache_free\n");
 	if (group_cache)
-		__uma_zdestroy("qs_group", group_cache);
+		uma_zdestroy(group_cache);
 
 	debug_info("index_lookup_cache_free\n");
 	if (index_lookup_cache)
-		__uma_zdestroy("qs_index_lookup", index_lookup_cache);
+		uma_zdestroy(index_lookup_cache);
 
 	debug_info("index_cache_free\n");
 	if (index_cache)
-		__uma_zdestroy("qs_index", index_cache);
+		uma_zdestroy(index_cache);
 
 	debug_info("index_cache_free\n");
 	if (subgroup_index_cache)
-		__uma_zdestroy("qs_subgroup_index", subgroup_index_cache);
+		uma_zdestroy(subgroup_index_cache);
 
 	debug_info("ddtable_ddlookup_node_cache_free\n");
 	if (ddtable_ddlookup_node_cache)
-		__uma_zdestroy("qs_ddtable_ddlookup_node", ddtable_ddlookup_node_cache);
+		uma_zdestroy(ddtable_ddlookup_node_cache);
 
 	debug_info("ddlookup_list_cache_free\n");
 	if (ddlookup_list_cache)
-		__uma_zdestroy("qs_ddlookup_list", ddlookup_list_cache);
+		uma_zdestroy(ddlookup_list_cache);
 
 	debug_info("ddnode_cache_free\n");
 	if (ddnode_cache)
-		__uma_zdestroy("qs_ddnode", ddnode_cache);
+		uma_zdestroy(ddnode_cache);
 
 	debug_info("node_group_cache_free\n");
 	if (node_group_cache)
-		__uma_zdestroy("qs_node_group", node_group_cache);
+		uma_zdestroy(node_group_cache);
 
 	debug_info("amap_table_cache_free\n");
 	if (amap_table_cache)
-		__uma_zdestroy("qs_amap_table", amap_table_cache);
+		uma_zdestroy(amap_table_cache);
 
 	debug_info("amap_table_group_cache_free\n");
 	if (amap_table_group_cache)
-		__uma_zdestroy("qs_amap_table_group", amap_table_group_cache);
+		uma_zdestroy(amap_table_group_cache);
 
 	debug_info("lba_write_cache_free\n");
 	if (lba_write_cache)
-		__uma_zdestroy("qs_lba_write", lba_write_cache);
+		uma_zdestroy(lba_write_cache);
 
 	debug_info("aio_meta_cache_free\n");
 	if (aio_meta_cache)
-		__uma_zdestroy("qs_aio_meta", aio_meta_cache);
+		uma_zdestroy(aio_meta_cache);
 
 	debug_info("istate_cache_free\n");
 	if (istate_cache)
-		__uma_zdestroy("qs_istate", istate_cache);
+		uma_zdestroy(istate_cache);
 
 	debug_info("amap_cache_free\n");
 	if (amap_cache)
-		__uma_zdestroy("qs_amap", amap_cache);
+		uma_zdestroy(amap_cache);
 
 	debug_info("amap_index_cache_free\n");
 	if (amap_index_cache)
-		__uma_zdestroy("qs_amap_index", amap_index_cache);
+		uma_zdestroy(amap_index_cache);
 
 	debug_info("amap_sync_cache_free\n");
 	if (amap_sync_cache)
-		__uma_zdestroy("qs_amap_sync", amap_sync_cache);
+		uma_zdestroy(amap_sync_cache);
 
 	debug_info("chan_cache_free\n");
 	if (chan_cache)
-		__uma_zdestroy("qs_wait_chan", chan_cache);
+		uma_zdestroy(chan_cache);
 
 	debug_info("compl_cache_free\n");
 	if (compl_cache)
-		__uma_zdestroy("qs_wait_compl", compl_cache);
+		uma_zdestroy(compl_cache);
 
 #ifdef FREEBSD
 	debug_info("biot_cache_free\n");

@@ -78,7 +78,7 @@ __node_sock_alloc(struct node_comm *comm, int (*sock_callback) (struct node_sock
 {
 	struct node_sock *sock;
 
-	sock = __uma_zalloc(node_sock_cache, Q_WAITOK | Q_ZERO, sizeof(*sock)); 
+	sock = __uma_zalloc(node_sock_cache, Q_WAITOK);
 	SLIST_INIT(&sock->accept_list);
 	sock->comm = comm;
 	sock->sock_callback = sock_callback;
@@ -174,7 +174,7 @@ node_comm_alloc(struct node_msg_list *node_hash, uint32_t controller_ipaddr, uin
 {
 	struct node_comm *comm;
 
-	comm = __uma_zalloc(node_comm_cache, Q_WAITOK | Q_ZERO, sizeof(*comm)); 
+	comm = __uma_zalloc(node_comm_cache, Q_WAITOK);
 	comm->comm_wait = wait_chan_alloc("node comm wait");
 	comm->controller_ipaddr = controller_ipaddr;
 	comm->node_ipaddr = node_ipaddr;
@@ -232,7 +232,7 @@ node_msg_alloc(int msg_len)
 {
 	struct node_msg *msg;
 
-	msg = __uma_zalloc(node_msg_cache, Q_WAITOK | Q_ZERO, sizeof(*msg));
+	msg = __uma_zalloc(node_msg_cache, Q_WAITOK);
 	msg->raw = malloc(msg_len + sizeof(struct raw_node_msg), M_NODE_RMSG, Q_WAITOK);
 	msg->completion = wait_completion_alloc("node msg");
 	return msg;

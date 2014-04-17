@@ -175,7 +175,7 @@ amap_table_io(struct amap_table *amap_table, int rw)
 		TDISK_INC(amap_table->tdisk, amap_table_reads, 1);
 	}
 
-	aio_meta = __uma_zalloc(aio_meta_cache, Q_WAITOK, sizeof(*aio_meta)); 
+	aio_meta = __uma_alloc(aio_meta_cache, Q_WAITOK);
 	aio_meta->priv = amap_table;
 	SLIST_INIT(&aio_meta->io_waiters_post);
 
@@ -279,7 +279,7 @@ amap_io(struct amap *amap, uint64_t write_id, int rw)
 
 	mark_io_waiters(&amap->io_waiters);
 
-	aio_meta = __uma_zalloc(aio_meta_cache, Q_WAITOK, sizeof(*aio_meta)); 
+	aio_meta = __uma_alloc(aio_meta_cache, Q_WAITOK);
 	aio_meta->priv = amap;
 	SLIST_INIT(&aio_meta->io_waiters_post);
 	iowaiters_move(&aio_meta->io_waiters_post, &amap->io_waiters); 
@@ -321,7 +321,7 @@ amap_alloc(struct amap_table *amap_table, uint32_t amap_id, uint32_t amap_idx)
 {
 	struct amap *amap;
 
-	amap = __uma_zalloc(amap_cache, Q_NOWAIT | Q_ZERO, sizeof(*amap));
+	amap = __uma_zalloc(amap_cache, Q_NOWAIT);
 	if (unlikely(!amap)) {
 		debug_warn("Memory allocation failure\n");
 		return NULL;

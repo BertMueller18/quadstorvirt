@@ -183,7 +183,7 @@ devq_process_comp_queue(struct qs_cdevq *devq)
 
 	while ((pgdata = get_next_comp_pgdata()) != NULL) {
 		DD_TSTART(start_ticks);
-		comp_pgdata = __uma_zalloc(pgdata_cache, Q_NOWAIT | Q_ZERO, sizeof(*comp_pgdata));
+		comp_pgdata = __uma_zalloc(pgdata_cache, Q_NOWAIT);
 		if (unlikely(!comp_pgdata)) {
 			wait_complete_all(pgdata->completion);
 			DD_TEND(compression_ticks, start_ticks);
@@ -721,7 +721,7 @@ init_devq(int id, void *thr_func, char *name)
 	struct qs_gdevq *devq;
 	int retval;
 
-	devq = __uma_zalloc(gdevq_cache, Q_NOWAIT | Q_ZERO, sizeof(*devq));
+	devq = __uma_zalloc(gdevq_cache, Q_NOWAIT);
 	if (unlikely(!devq)) {
 		debug_warn("Slab allocation failure\n");
 		return NULL;

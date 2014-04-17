@@ -113,8 +113,9 @@ struct qs_kern_cbs {
 	void (*vm_pg_ref)(pagestruct_t *pp);
 	void (*vm_pg_unref)(pagestruct_t *pp);
 	void* (*uma_zcreate)(const char *name, size_t size);
-	void (*uma_zdestroy)(const char *name, void *cachep);
-	void* (*uma_zalloc)(uma_t *cachep, allocflags_t flags, size_t len);
+	void (*uma_zdestroy)(void *cachep);
+	void* (*uma_zalloc)(uma_t *cachep, allocflags_t flags);
+	void* (*uma_alloc)(uma_t *cachep, allocflags_t flags);
 	void (*uma_zfree)(uma_t *cachep, void *ptr);
 	void* (*zalloc)(size_t size, int type, allocflags_t flags);
 	void* (*malloc)(size_t size, int type, allocflags_t flags); 

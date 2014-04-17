@@ -24,7 +24,7 @@ tcache_alloc(int bio_count)
 {
 	struct tcache *tcache;
 
-	tcache = __uma_zalloc(tcache_cache, Q_WAITOK | Q_ZERO, sizeof(*tcache)); 
+	tcache = __uma_zalloc(tcache_cache, Q_WAITOK);
 	atomic_set(&tcache->refs, 1);
 	tcache->completion = wait_completion_alloc("tcache compl");
 	SLIST_INIT(&tcache->priv.meta_list);
