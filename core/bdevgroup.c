@@ -19,7 +19,6 @@
 #include "bdevgroup.h"
 #include "../common/cluster_common.h" 
 #include "cluster.h"
-#include "node_sync.h"
 
 static SLIST_HEAD(, bdevgroup) group_list = SLIST_HEAD_INITIALIZER(group_list);
 
@@ -95,21 +94,6 @@ bdev_groups_reset_write_logs(void)
 			error = -1;
 	}
 	return error;
-}
-
-void
-bdev_groups_ddtable_wait_sync_busy(void)
-{
-	struct bdevgroup *group;
-
-	SLIST_FOREACH(group, &group_list, g_list) {
-		if (!group->dedupemeta)
-			continue;
-		if (!atomic_read(&group->ddtable.inited))
-			continue;
-
-		ddtable_wait_sync_busy(&group->ddtable);
-	}
 }
 
 int
