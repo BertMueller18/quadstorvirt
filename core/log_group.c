@@ -20,7 +20,6 @@
 #include "fastlog.h"
 #include "tcache.h"
 #include "cluster.h"
-#include "node_sync.h"
 
 #ifdef FREEBSD 
 static void log_group_end_bio(struct bio *bio)
@@ -120,7 +119,6 @@ log_group_io(struct log_group *group, struct tcache **ret_tcache)
 		atomic_set_bit_short(LOG_META_DATA_DIRTY, &log_page->flags);
 		log_page->log_id = write_id_incr(log_page->log_id, 1);
 		atomic_clear_bit_short(LOG_META_DATA_CLONED, &log_page->flags);
-		node_log_sync_send(log_page, tcache);
 		vm_pg_ref(log_page->metadata);
 		raw_page_v3 = (struct raw_log_page_v3 *)(((uint8_t *)vm_pg_address(log_page->metadata)) + V2_LOG_OFFSET);
 		csum = calc_csum16(vm_pg_address(log_page->metadata), BINT_BMAP_SIZE - sizeof(*raw_page_v3));
