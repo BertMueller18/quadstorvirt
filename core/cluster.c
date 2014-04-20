@@ -1568,25 +1568,7 @@ node_get_tprt(void)
 int
 node_status(struct node_config *node_config)
 {
-	struct node_comm *comm;
-	int i, max;
-
 	bzero(node_config, sizeof(*node_config));
-	if (node_type_master() || node_type_controller()) {
-		memcpy(node_config, &master_config, sizeof(master_config));
-		if (atomic_test_bit(MASTER_BIND_ERROR, &master_flags))
-			node_config->node_flags = MASTER_BIND_ERROR;
-		else if (atomic_test_bit(MASTER_INITED, &master_flags))
-			node_config->node_flags = MASTER_INITED;
-	}
-	else if (node_type_client()) {
-		memcpy(node_config, &client_config, sizeof(client_config));
-		if (atomic_test_bit(CLIENT_CONNECT_ERROR, &client_flags))
-			node_config->node_flags = CLIENT_CONNECT_ERROR;
-		else if (atomic_test_bit(CLIENT_INITED, &client_flags))
-			node_config->node_flags = CLIENT_INITED;
-	}
-
 	if (node_type_receiver()) {
 		if (atomic_test_bit(MASTER_BIND_ERROR, &recv_flags))
 			node_config->recv_flags = MASTER_BIND_ERROR;
@@ -1594,26 +1576,6 @@ node_status(struct node_config *node_config)
 			node_config->recv_flags = MASTER_INITED;
 		strcpy(node_config->recv_host, recv_config.recv_host);
 		node_config->recv_ipaddr = recv_config.recv_ipaddr;
-	}
-
-	node_config->node_type = node_type;
-	node_config->node_role = node_get_role();
-	node_config->sync_status = atomic_read(&sync_status);
-
-	bzero(node_config->nodes, sizeof(node_config->nodes));
-	if (node_get_role() == NODE_ROLE_MASTER && root) {
-		max = (sizeof(node_config->nodes) / sizeof(node_config->nodes[0]));
-		i = 0;
-		node_comm_lock(root);
-		SLIST_FOREACH(comm, &root->comm_list, c_list) {
-			if (atomic_test_bit(NODE_COMM_UNREGISTERED, &comm->flags))
-				continue;
-			if (i == max)
-				break;
-			node_config->nodes[i] = comm->node_ipaddr;
-			i++;
-		}
-		node_comm_unlock(root);
 	}
 	return 0;
 }
