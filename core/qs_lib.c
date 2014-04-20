@@ -20,8 +20,6 @@
 #include "qs_lib.h"
 #include "bdevmgr.h"
 #include "cluster.h" 
-#include "node_sync.h"
-#include "node_ha.h"
 
 #ifdef FREEBSD 
 static void bio_meta_end_bio(bio_t *bio)
@@ -97,7 +95,6 @@ qs_lib_bio_page(struct bdevint *bint, uint64_t b_start, uint32_t size, pagestruc
 	int retval;
 #endif
 
-	debug_check(node_in_standby() && !node_in_transition() && is_write_iop(rw));
 #ifdef ENABLE_STATS
 	if (is_write_iop(rw)) {
 		GLOB_INC(bio_writes, 1);

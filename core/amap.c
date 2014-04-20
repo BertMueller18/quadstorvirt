@@ -22,8 +22,6 @@
 #include "gdevq.h"
 #include "qs_lib.h"
 #include "cluster.h"
-#include "node_sync.h"
-#include "node_ha.h"
 
 void
 amap_table_free_amaps(struct amap_table *amap_table)
@@ -164,7 +162,6 @@ amap_table_io(struct amap_table *amap_table, int rw)
 	if (is_write_iop(rw)) {
 		debug_check(atomic_test_bit_short(ATABLE_META_DATA_DIRTY, &amap_table->flags));
 		amap_table_write_csum(amap_table);
-		node_amap_table_sync_send(amap_table);
 		atomic_set_bit_short(ATABLE_META_DATA_DIRTY, &amap_table->flags);
 		atomic_clear_bit_short(ATABLE_META_IO_PENDING, &amap_table->flags);
 		atomic_clear_bit_short(ATABLE_META_DATA_CLONED, &amap_table->flags);
@@ -267,7 +264,6 @@ amap_io(struct amap *amap, uint64_t write_id, int rw)
 		debug_check(atomic_test_bit_short(AMAP_META_DATA_DIRTY, &amap->flags));
 		TDISK_INC(amap->amap_table->tdisk, amap_writes, 1);
 		amap_write_csum(amap, write_id);
-		node_amap_sync_send(amap);
 		atomic_set_bit_short(AMAP_META_DATA_DIRTY, &amap->flags);
 		atomic_clear_bit_short(AMAP_META_IO_PENDING, &amap->flags);
 		atomic_clear_bit_short(AMAP_META_DATA_CLONED, &amap->flags);
