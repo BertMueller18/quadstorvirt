@@ -22,8 +22,6 @@
 #include "vdevdefs.h"
 #include <exportdefs.h>
 #include "cluster.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "node_mirror.h"
 
 static int
@@ -213,16 +211,12 @@ registrants_unit_attention(struct tdisk *tdisk, uint8_t asc, uint8_t ascq, uint6
 {
 	struct reservation *reservation = &tdisk->reservation;
 	struct registration *registration;
-	int send_sync = 0;
 
 	SLIST_FOREACH(registration, &reservation->registration_list, r_list) {
 		if (skip && iid_equal(registration->i_prt, registration->t_prt, registration->init_int, i_prt, t_prt, init_int))
 			continue;
 		registrant_unit_attention(tdisk, registration, asc, ascq);
-		send_sync = 1;
 	}
-	if (send_sync)
-		node_istate_sense_state_send(tdisk);
 }
 
 void
@@ -399,10 +393,8 @@ persistent_reservation_remove_registration(struct tdisk *tdisk, struct registrat
 {
 	struct reservation *reservation = &tdisk->reservation;
 
-	if (!reservation->is_reserved) {
-		node_registration_sync_send(tdisk, registration, REGISTRATION_OP_DELETE);
+	if (!reservation->is_reserved)
 		return;
-	}
 
 	if (in_persistent_ar_type(reservation)) {
 		if (SLIST_EMPTY(&reservation->registration_list))
@@ -416,7 +408,6 @@ persistent_reservation_remove_registration(struct tdisk *tdisk, struct registrat
 			persistent_reservation_reset(reservation);
 		}
 	}
-	node_registration_sync_send(tdisk, registration, REGISTRATION_OP_DELETE);
 }
  
 int
@@ -465,10 +456,8 @@ persistent_reservation_handle_register(struct tdisk *tdisk, struct qsio_scsiio *
 		{
 			tmp->key = service_action_key;
 			persistent_reservation_update_key(reservation, ctio, service_action_key);
-			node_registration_sync_send(tdisk, tmp, REGISTRATION_OP_MODIFY);
 		}
 		reservation->generation++;
-		node_reservation_sync_send(tdisk, reservation);
 		free(registration, M_RESERVATION);
 		return 0;
 	}
@@ -480,7 +469,6 @@ persistent_reservation_handle_register(struct tdisk *tdisk, struct qsio_scsiio *
 			return 0;
  
 		reservation->generation++;
-		node_reservation_sync_send(tdisk, reservation);
 		free(registration, M_RESERVATION);
 		return 0;
 	}
@@ -510,7 +498,6 @@ persistent_reservation_handle_register(struct tdisk *tdisk, struct qsio_scsiio *
 	}
 	SLIST_INSERT_HEAD(&reservation->registration_list, registration, r_list);
 	reservation->generation++;
-	node_registration_sync_send(tdisk, registration, REGISTRATION_OP_ADD);
 	return 0;
 }
 
@@ -552,10 +539,8 @@ persistent_reservation_handle_register_and_ignore(struct tdisk *tdisk, struct qs
 		{
 			tmp->key = service_action_key;
 			persistent_reservation_update_key(reservation, ctio, service_action_key);
-			node_registration_sync_send(tdisk, tmp, REGISTRATION_OP_MODIFY);
 		}
 		reservation->generation++;
-		node_reservation_sync_send(tdisk, reservation);
 		free(registration, M_RESERVATION);
 		return 0;
 	}
@@ -567,7 +552,6 @@ persistent_reservation_handle_register_and_ignore(struct tdisk *tdisk, struct qs
 			return 0;
 
 		reservation->generation++;
-		node_reservation_sync_send(tdisk, reservation);
 		free(registration, M_RESERVATION);
 		return 0;
 	}
@@ -590,7 +574,6 @@ persistent_reservation_handle_register_and_ignore(struct tdisk *tdisk, struct qs
 	}
 	SLIST_INSERT_HEAD(&reservation->registration_list, registration, r_list);
 	reservation->generation++;
-	node_registration_sync_send(tdisk, registration, REGISTRATION_OP_ADD);
 	return 0;
 }
 
@@ -644,7 +627,6 @@ persistent_reservation_handle_reserve(struct tdisk *tdisk, struct qsio_scsiio *c
 	port_fill(reservation->t_prt, ctio->t_prt);
 	reservation->r_prt = ctio->r_prt;
 	reservation->init_int = ctio->init_int;
-	node_reservation_sync_send(tdisk, reservation);
 	return 0;
 }
 
@@ -699,7 +681,6 @@ persistent_reservation_handle_release(struct tdisk *tdisk, struct qsio_scsiio *c
 		registrants_unit_attention(tdisk, RESERVATIONS_RELEASED_ASC, RESERVATIONS_RELEASED_ASCQ, ctio->i_prt, ctio->t_prt, ctio->init_int, 1);
 	}
 	persistent_reservation_reset(reservation);
-	node_reservation_sync_send(tdisk, reservation);
 	return 0;
 }
 
@@ -729,7 +710,6 @@ persistent_reservation_handle_clear(struct tdisk *tdisk, struct qsio_scsiio *cti
 	persistent_reservation_clear(&reservation->registration_list);
 	persistent_reservation_reset(reservation);
 	reservation->generation++;
-	node_registration_clear_sync_send(tdisk);
 	return 0;
 }
 
@@ -781,7 +761,6 @@ persistent_reservation_handle_preempt(struct tdisk *tdisk, struct qsio_scsiio *c
 	uint8_t type;
 	int retval;
 	int is_ar = 0;
-	int send_sync = 0;
 
 	param = (struct reservation_parameter *)(ctio->data_ptr);
 	key = be64toh(param->key);
@@ -825,13 +804,8 @@ persistent_reservation_handle_preempt(struct tdisk *tdisk, struct qsio_scsiio *c
 			persistent_reservation_abort_tasks(tdisk, tmp->i_prt, tmp->t_prt, tmp->r_prt, tmp->init_int);
 
 		registrant_unit_attention(tdisk, tmp, REGISTRATIONS_PREEMPTED_ASC, REGISTRATIONS_PREEMPTED_ASCQ);
-		send_sync = 1;
-		node_registration_sync_send(tdisk, tmp, REGISTRATION_OP_DELETE);
 		free(tmp, M_RESERVATION);
 	}
-
-	if (send_sync)
-		node_istate_sense_state_send(tdisk);
 
 	if ((reservation->is_reserved && !is_ar && (reservation->persistent_key == service_action_key)) || (is_ar && !service_action_key)) {
 		reservation->type = RESERVATION_TYPE_PERSISTENT;
@@ -843,7 +817,6 @@ persistent_reservation_handle_preempt(struct tdisk *tdisk, struct qsio_scsiio *c
 		reservation->persistent_type = type;
 	}
 	reservation->generation++;
-	node_reservation_sync_send(tdisk, reservation);
 	return 0;
 }
 
