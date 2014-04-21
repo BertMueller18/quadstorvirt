@@ -1584,26 +1584,10 @@ int
 node_config(struct node_config *node_config)
 {
 	int retval = -1;
-	int is_master;
 
-	if (node_config->node_type == NODE_TYPE_CONTROLLER)
-		retval = node_master_init(node_config);
-	else if (node_config->node_type == NODE_TYPE_CLIENT)
-		retval = node_client_init(node_config);
-	else if (node_config->node_type == NODE_TYPE_MASTER) {
-		retval = node_client_init(node_config);
-		if (retval == 0)
-			retval = node_master_init(node_config);
-	}
-	else if (node_config->node_type == NODE_TYPE_RECEIVER)
+	if (node_config->node_type == NODE_TYPE_RECEIVER)
 		retval = node_recv_init(node_config);
 
-	if (retval == 0) {
-		is_master = node_type_master();
-		atomic_set_bit(node_config->node_type, &node_type);
-		if (!is_master && node_type_master())
-			node_set_role(NODE_ROLE_STANDBY);
-	}
 	return (retval >= 0) ? 0 : retval;
 }
 
