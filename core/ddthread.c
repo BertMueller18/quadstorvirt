@@ -24,8 +24,6 @@
 #include "rcache.h"
 #include "log_group.h"
 #include "cluster.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "bdevgroup.h"
 
 static SLIST_HEAD(, ddthread) ddthread_list = SLIST_HEAD_INITIALIZER(ddthread_list);
@@ -408,49 +406,6 @@ handle_ddspec_list(struct ddtable *ddtable, struct ddspec_list *ddspec_list)
 }
 
 static void
-handle_meta_list_sync(struct tdisk *tdisk, struct index_info_list *meta_index_info_list, struct amap_sync_list *amap_sync_list)
-{
-	struct index_info *index_info, *next;
-	struct bintindex *index;
-	struct amap *amap;
-	struct amap_table *amap_table;
-
-	if (TAILQ_EMPTY(meta_index_info_list))
-		return;
-
-	if (!node_sync_enabled() || !node_tdisk_sync_enabled(tdisk)) {
-		index_info_list_free(meta_index_info_list);
-		return;
-	}
-
-	TAILQ_FOREACH_SAFE(index_info, meta_index_info_list, i_list, next) {
-		index = index_info->index;
-
-		if (index_info->meta_type != INDEX_INFO_TYPE_AMAP)
-			continue;
-
-		amap = amap_locate_by_block(index_info->block, amap_sync_list);
-		debug_check(!amap);
-		node_amap_meta_sync_send(amap);
-		TAILQ_REMOVE(meta_index_info_list, index_info, i_list);
-		index_put(index);
-		index_info_free(index_info);
-	}
-
-	TAILQ_FOREACH_SAFE(index_info, meta_index_info_list, i_list, next) {
-		index = index_info->index;
-		if (index_info->meta_type == INDEX_INFO_TYPE_AMAP_TABLE) {
-			amap_table = amap_table_locate_by_block(index_info->block, amap_sync_list);
-			debug_check(!amap_table);
-			node_amap_table_meta_sync_send(amap_table);
-		}
-		TAILQ_REMOVE(meta_index_info_list, index_info, i_list);
-		index_put(index);
-		index_info_free(index_info);
-	}
-}
-
-static void
 ddthread_handle_ddwork(struct ddwork *ddwork)
 {
 	struct tdisk *tdisk = ddwork->tdisk;
@@ -597,24 +552,13 @@ ddthread_handle_ddwork(struct ddwork *ddwork)
 	DD_TEND(log_clear_ticks, start_ticks);
 
 	DD_TSTART(start_ticks);
-	handle_meta_list_sync(tdisk, &ddwork->meta_index_info_list, &ddwork->amap_sync_list);
-	DD_TEND(handle_meta_sync_ticks, start_ticks);
-
-	DD_TSTART(start_ticks);
-	if (!TAILQ_EMPTY(&ddwork->meta_index_info_list))
-		node_newmeta_sync_complete(tdisk, ddwork->newmeta_transaction_id);
-
-	node_pgdata_sync_complete(tdisk, ddwork->transaction_id);
-	DD_TEND(node_pgdata_sync_ticks, start_ticks);
-
-	DD_TSTART(start_ticks);
 	amap_sync_list_free(&ddwork->amap_sync_list);
 	__pglist_free(ddwork->pglist, ddwork->pglist_cnt);
 	index_info_list_free(&tmp_index_info_list);
 	index_info_list_free_unmap(&delete_index_info_list);
 	pglist_cnt_decr(ddwork->pglist_cnt);
-#if 0
 	index_info_list_free(&ddwork->meta_index_info_list);
+#if 0
 	index_info_list_free(&ddwork->index_info_list);
 #endif
 	handle_ddspec_list(ddtable, &ddspec_list);
