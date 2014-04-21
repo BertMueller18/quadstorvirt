@@ -27,8 +27,6 @@
 #include "qs_lib.h"
 #include "node_ha.h"
 #include "cluster.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "bdevgroup.h"
 
 #ifdef ENABLE_STATS
@@ -585,7 +583,6 @@ int subgroup_write_io(struct index_subgroup *subgroup, struct tcache **ret_tcach
 		index_write_csum(bint, index, incr);
 		write_id = index->write_id;
 		index_unlock(index);
-		node_bintindex_sync_send(index, tcache, metadata, write_id);
 		SLIST_INSERT_HEAD(&tcache->priv.meta_list, index, tc_list);
 		__tcache_add_page(tcache, metadata, bint_index_bstart(bint, index->index_id), bint, BINT_BMAP_SIZE, QS_IO_WRITE, subgroup_end_bio);
 		GLOB_INC(index_writes, 1);
@@ -735,7 +732,6 @@ index_lookup_io(struct index_group *group, int rw)
 		memcpy(vm_pg_address(page), vm_pg_address(ilookup->metadata), PAGE_SIZE);
 		mtx_unlock(ilookup->lookup_lock);
 		metadata = page;
-		node_index_lookup_sync_send(group, page);
 	}
 	else
 	{
@@ -2021,7 +2017,6 @@ bint_sync(struct bdevint *bint, int flush)
 	strcpy(raw_bint->group_name, bint->group->name);
 	atomic_set_bit(BINT_DATA_DIRTY, &bint->flags);
 	bint_unlock(bint);
-	node_bint_sync_send(bint);
 
 	retval = qs_lib_bio_lba(bint, bint->b_start, page, QS_IO_WRITE, TYPE_BINT);
 	if (unlikely(retval != 0)) {
@@ -2194,7 +2189,6 @@ bdev_remove(struct bdev_info *binfo)
 	if (bint->ddmaster)
 		ddtable_exit(&bint->group->ddtable);
 
-	node_bint_delete_send(bint);
 	atomic_dec(&bint->group->bdevs);
 	bint_free(bint, binfo->free_alloc);
 	sx_xunlock(gchain_lock);
@@ -3685,14 +3679,6 @@ static int bint_create_thread(void *data)
 		}
 	}
 
-	if (node_sync_enabled()) {
-		retval = __node_bint_sync_send(bint);
-		if (retval == 0) {
-			atomic_set_bit(BINT_SYNC_ENABLED, &bint->flags);
-			if (atomic_test_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags))
-				node_ha_enable();
-		}
-	}
 	bdev_alloc_list_insert(bint);
 
 exit:

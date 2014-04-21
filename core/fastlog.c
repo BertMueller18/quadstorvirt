@@ -25,7 +25,6 @@
 #include "log_group.h"
 #include "qs_lib.h"
 #include "cluster.h"
-#include "node_sync.h"
 #include "bdevgroup.h"
 
 extern uint32_t log_reserve_waits;
