@@ -475,7 +475,7 @@ tdisk_init_inquiry_data(struct inquiry_data *inquiry)
 {
 	bzero(inquiry, sizeof(*inquiry));
 	inquiry->device_type = T_DIRECT;
-	inquiry->version = ANSI_VERSION_SCSI3_SPC4; /* Current supported version. Need to do it a better way */
+	inquiry->version = ANSI_VERSION_SCSI3_SPC3; /* Current supported version. Need to do it a better way */
 	inquiry->response_data = RESPONSE_DATA | HISUP_MASK; 
 	inquiry->additional_length = STANDARD_INQUIRY_LEN - 5; /* n - 4 */
 	inquiry->protect = 0x8; /* 3PC */
@@ -485,9 +485,11 @@ tdisk_init_inquiry_data(struct inquiry_data *inquiry)
 	sys_memset(&inquiry->product_id, ' ', 16);
 	memcpy(&inquiry->product_id, PRODUCT_ID_QUADSTOR_SAN, strlen(PRODUCT_ID_QUADSTOR_SAN));
 	memcpy(&inquiry->revision_level, PRODUCT_REVISION_QUADSTOR, strlen(PRODUCT_REVISION_QUADSTOR));
+#if 0
 	inquiry->vd1 = htobe16(0x0060); /* SAM 3 No version claimed */
 	inquiry->vd2 = htobe16(0x0460); /* SPC 4 No version claimed */
 	inquiry->vd1 = htobe16(0x04C0); /* SBC 3 No version claimed */
+#endif
 }
 
 void
@@ -2870,15 +2872,14 @@ tdisk_copy_block_limits_vpd_page(struct tdisk *tdisk, uint8_t *buffer, int alloc
 }
 
 struct evpd_page_info evpd_info  = {
-	.num_pages = 0x08,
+	.num_pages = 0x07,
 	.page_code[0] = VITAL_PRODUCT_DATA_PAGE,
 	.page_code[1] = UNIT_SERIAL_NUMBER_PAGE,
 	.page_code[2] = DEVICE_IDENTIFICATION_PAGE,
 	.page_code[3] = EXTENDED_INQUIRY_VPD_PAGE,
-	.page_code[4] = THIRD_PARTY_COPY_VPD_PAGE,
-	.page_code[5] = BLOCK_LIMITS_VPD_PAGE,
-	.page_code[6] = BLOCK_DEVICE_CHARACTERISTICS_VPD_PAGE,
-	.page_code[7] = LOGICAL_BLOCK_PROVISIONING_VPD_PAGE,
+	.page_code[4] = BLOCK_LIMITS_VPD_PAGE,
+	.page_code[5] = BLOCK_DEVICE_CHARACTERISTICS_VPD_PAGE,
+	.page_code[6] = LOGICAL_BLOCK_PROVISIONING_VPD_PAGE,
 };
 
 static int 
@@ -2934,9 +2935,6 @@ tdisk_evpd_inquiry_data(struct tdisk *tdisk, struct qsio_scsiio *ctio, uint8_t p
 		break;
 	case EXTENDED_INQUIRY_VPD_PAGE:
 		retval = tdisk_copy_extended_inquiry_vpd_page(ctio->data_ptr, allocation_length);
-		break;
-	case THIRD_PARTY_COPY_VPD_PAGE:
-		retval = tdisk_copy_third_party_copy_vpd_page(tdisk, ctio->data_ptr, allocation_length);
 		break;
 	default:
 		debug_info("Invalid page code %x\n", page_code);
@@ -7511,25 +7509,12 @@ tdisk_cmd_extended_copy(struct tdisk *tdisk, struct qsio_scsiio *ctio)
 {
 	uint8_t *cdb = ctio->cdb;
 	uint8_t service_action;
-	uint32_t start_ticks;
 
 	service_action = cdb[1] & 0x1F;
 
 	switch (service_action) {
 	case SERVICE_ACTION_EXTENDED_COPY_LID1:
 		tdisk_cmd_extended_copy_read(tdisk, ctio);
-		break;
-	case SERVICE_ACTION_POPULATE_TOKEN:
-		TDISK_TICKS_START(start_ticks);
-		tdisk_cmd_populate_token(tdisk, ctio);
-		TDISK_TICKS_END(tdisk, populate_token_ticks, start_ticks);
-		TDISK_STATS_ADD(tdisk, populate_token_cmds, 1);
-		break;
-	case SERVICE_ACTION_WRITE_USING_TOKEN:
-		TDISK_TICKS_START(start_ticks);
-		tdisk_cmd_write_using_token(tdisk, ctio);
-		TDISK_TICKS_END(tdisk, write_using_token_ticks, start_ticks);
-		TDISK_STATS_ADD(tdisk, write_using_token_cmds, 1);
 		break;
 	default:
 		ctio_free_data(ctio);
@@ -7652,9 +7637,6 @@ tdisk_cmd_receive_copy_data(struct tdisk *tdisk, struct qsio_scsiio *ctio)
 	case SERVICE_ACTION_RECEIVE_COPY_STATUS_LID1:
 	case SERVICE_ACTION_RECEIVE_COPY_OPERATING_PARAMETERS:
 		retval = tdisk_cmd_receive_copy_results(tdisk, ctio);
-		break;
-	case SERVICE_ACTION_RECEIVE_ROD_TOKEN_INFORMATION:
-		retval = tdisk_cmd_receive_rod_token_information(tdisk, ctio);
 		break;
 	default:
 		tdisk_invalid_field_in_cdb_sense(tdisk, ctio);
