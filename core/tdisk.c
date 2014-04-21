@@ -31,8 +31,6 @@
 #include "reservation.h"
 #include <exportdefs.h>
 #include "cluster.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "bdevgroup.h"
 #include "node_mirror.h"
 #include "copymgr.h"
@@ -860,8 +858,6 @@ target_delete_disk(struct tdisk_info *tdisk_info, unsigned long arg)
 
 	target_clear_fc_rules(tdisk->target_id);
 
-	node_tdisk_delete_send(tdisk);
-
 	if (tdisk_info->free_alloc) {
 		tdisk_mirror_remove(tdisk, 0);
 	}
@@ -994,9 +990,6 @@ __tdisk_sync(struct tdisk *tdisk, int free_alloc)
 	atomic_clear_bit(VDISK_SYNC_START, &tdisk->flags);
 	memcpy(vm_pg_address(page), vm_pg_address(tdisk->metadata), PAGE_SIZE);
 
-	if (!free_alloc)
-		node_tdisk_sync_send(tdisk);
-
 	if (free_alloc)
 		goto skip;
 
@@ -1065,13 +1058,6 @@ int tdisk_sync_thread(void *data)
 #endif
 
 		wait_on_chan_timeout(tdisk->sync_wait, kernel_thread_check(&tdisk->flags, VDISK_SYNC_EXIT), 10000);
-
-		if (node_in_standby()) {
-			if (kernel_thread_check(&tdisk->flags, VDISK_SYNC_EXIT))
-				break;
-			atomic_clear_bit(VDISK_SYNC_START, &tdisk->flags);
-			continue;
-		}
 
 		if (!atomic_test_bit(VDISK_FREE_ALLOC, &tdisk->flags))
 			tdisk_sync(tdisk, 0);
@@ -1175,16 +1161,8 @@ static int tdisk_attach_thread(void *data)
 	int retval;
 
 	retval = tdisk_mirror_load(tdisk);
-	if (retval == 0) {
+	if (retval == 0)
 		cbs_new_device(tdisk, 1);
-		if (node_type_controller() && node_sync_enabled()) {
-			tdisk_lock(tdisk);
-			retval = __node_tdisk_sync_send(tdisk);
-			if (retval == 0)
-				atomic_set_bit(VDISK_SYNC_ENABLED, &tdisk->flags);
-			tdisk_unlock(tdisk);
-		}
-	}
 	atomic_set_bit(VDISK_MIRROR_LOAD_DONE, &tdisk->flags);
 	wait_on_chan_interruptible(tdisk->attach_wait, kernel_thread_check(&tdisk->flags, VDISK_ATTACH_EXIT));
 
@@ -1847,8 +1825,6 @@ tdisk_update_peers(struct tdisk *tdisk, uint64_t new_size, int reduc)
 {
 	struct vdisk_update_spec spec;
 
-	node_tdisk_update_send(tdisk);
-
 	if (reduc) {
 		spec.enable_deduplication = tdisk->enable_deduplication;
 		spec.enable_compression = tdisk->enable_compression;
@@ -2384,7 +2360,6 @@ tdisk_cmd_reserve(struct tdisk *tdisk, struct qsio_scsiio *ctio)
 	port_fill(tdisk->reservation.i_prt, ctio->i_prt);
 	port_fill(tdisk->reservation.t_prt, ctio->t_prt);
 	tdisk->reservation.init_int = ctio->init_int;
-	node_reservation_sync_send(tdisk, &tdisk->reservation);
 	tdisk_reservation_unlock(tdisk);
 	return 0;
 }
@@ -2396,7 +2371,6 @@ tdisk_cmd_release(struct tdisk *tdisk, struct qsio_scsiio *ctio)
 	if (iid_equal(tdisk->reservation.i_prt, tdisk->reservation.t_prt, tdisk->reservation.init_int, ctio->i_prt, ctio->t_prt, ctio->init_int))
 	{
 		tdisk->reservation.is_reserved = 0;
-		node_reservation_sync_send(tdisk, &tdisk->reservation);
 	}
 	tdisk_reservation_unlock(tdisk);
 	return 0;
@@ -4974,7 +4948,6 @@ table_index_write(struct tdisk *tdisk, struct amap_table_index *table_index, uin
 		set_amap_table_block(table_index, index_offset, amap_table->amap_table_block);
 		bio_meta_init(&bio_meta);
 		qs_lib_bio_page(table_index->bint, table_index->b_start, BINT_INDEX_META_SIZE, table_index->metadata, NULL, &bio_meta, QS_IO_WRITE, TYPE_TDISK_INDEX);
-		node_table_index_sync_send(tdisk, table_index, index_id);
 		atomic_set_bit(META_DATA_DIRTY, &table_index->flags);
 		sx_xunlock(table_index->table_index_lock);
 		wait_for_bio_meta(&bio_meta);
@@ -5236,9 +5209,6 @@ pgdata_post_write(struct tdisk *tdisk, struct pgdata **pglist, int pglist_cnt, s
 	ddthread_insert(ddwork);
 	return;
 reset:
-	if (atomic_test_bit(WLIST_DONE_NEWMETA_SYNC_START, &wlist->flags))
-		node_newmeta_sync_complete(tdisk, wlist->newmeta_transaction_id);
-	node_pgdata_sync_complete(tdisk, wlist->transaction_id);
 	pglist_cnt_decr(pglist_cnt);
 	wlist_release_log_reserved(tdisk, wlist);
 	fastlog_log_list_free(&wlist->log_list);
@@ -6234,12 +6204,6 @@ tdisk_write_error(struct tdisk *tdisk, struct qsio_scsiio *ctio, struct write_li
 	handle_amap_sync_wait(&amap_sync_list);
 	index_sync_start_io(&index_sync_list, 1);
 
-	if (atomic_test_bit(WLIST_DONE_NEWMETA_SYNC_START, &wlist->flags))
-		node_newmeta_sync_complete(tdisk, wlist->newmeta_transaction_id);
-
-	if (atomic_test_bit(WLIST_DONE_PGDATA_SYNC_START, &wlist->flags))
-		node_pgdata_sync_complete(tdisk, wlist->transaction_id);
-
 	if (atomic_test_bit(WLIST_DONE_LOG_END, &wlist->flags)) {
 		log_list_end_wait(&wlist->log_list);
 		log_list_start_writes(&wlist->log_list);
@@ -6293,15 +6257,6 @@ __tdisk_cmd_write(struct tdisk *tdisk, struct qsio_scsiio *ctio, uint64_t lba, u
 		wait_for_pgdata((struct pgdata **)ctio->data_ptr, ctio->pglist_cnt);
 		ctio_free_data(ctio);
 		ctio_construct_sense(ctio, SSD_CURRENT_ERROR, SSD_KEY_ILLEGAL_REQUEST, 0, LOGICAL_BLOCK_ADDRESS_OUT_OF_RANGE_ASC, LOGICAL_BLOCK_ADDRESS_OUT_OF_RANGE_ASCQ);
-		device_send_ccb(ctio);
-		return -1;
-	}
-
-	if (node_in_standby()) {
-		debug_warn("Invalid write to %s when node in standby\n", tdisk_name(tdisk));
-		wait_for_pgdata((struct pgdata **)ctio->data_ptr, ctio->pglist_cnt);
-		ctio_free_data(ctio);
-		ctio->scsi_status = SCSI_STATUS_BUSY;
 		device_send_ccb(ctio);
 		return -1;
 	}
@@ -6520,9 +6475,6 @@ sync_amap_post:
 	if (unlikely(retval != 0))
 		goto err;
 
-	node_newmeta_sync_start(tdisk, &wlist);
-	node_pgdata_sync_start(tdisk, &wlist, pglist, pglist_cnt);
-
 	TDISK_TSTART(start_ticks);
 	log_list_end_writes(&wlist.log_list);
 	atomic_set_bit(WLIST_DONE_LOG_END, &wlist.flags);
@@ -6555,10 +6507,8 @@ sync_amap_post:
 		pglist_reset_pages(pglist, pglist_cnt);
 	}
 
-	if (sendstatus) {
-		node_pgdata_sync_client_done(tdisk, wlist.transaction_id);
+	if (sendstatus)
 		device_send_ccb(ctio);
-	}
 
 	TDISK_TSTART(start_ticks);
 	pgdata_post_write(tdisk, pglist, pglist_cnt, &wlist);
@@ -8201,7 +8151,7 @@ tdisk_proc_cmd(void *disk, void *iop)
 	}
 #endif
 
-	if (node_in_standby() || !vdisk_ready(tdisk) || !tdisk_mirror_ready(tdisk)) {
+	if (!vdisk_ready(tdisk) || !tdisk_mirror_ready(tdisk)) {
 		if (is_write_cmd(ctio))
 			wait_for_pgdata((struct pgdata **)ctio->data_ptr, ctio->pglist_cnt);
 		ctio_free_data(ctio);
@@ -8453,7 +8403,6 @@ tdisk_reset(struct tdisk *tdisk, uint64_t i_prt[], uint64_t t_prt[], uint8_t ini
 		tdisk->reservation.type = 0;
 	}
 	device_unit_attention(tdisk, 1, i_prt, t_prt, init_int, BUS_RESET_ASC, BUS_RESET_ASCQ, 1);
-	node_istate_sense_state_send(tdisk);
 	tdisk_reservation_unlock(tdisk);
 	device_unblock_queues(tdisk);
 }
