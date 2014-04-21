@@ -25,8 +25,6 @@
 #include "vdevdefs.h"
 #include "rcache.h"
 #include "cluster.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "bdevgroup.h"
 
 struct ddtable_stats ddtable_stats;
@@ -114,7 +112,7 @@ ddtable_ddlookup_node_dirty(struct ddtable *ddtable, struct ddtable_ddlookup_nod
 
 	atomic_set_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags);
 	atomic_set_bit_short(DDLOOKUP_META_DATA_NEEDS_SYNC, &ddlookup->flags);
-	if ((atomic_read(&ddtable->sync_count) > LOOKUPS_SYNC_CACHED_COUNT) && !node_in_standby()) {
+	if (atomic_read(&ddtable->sync_count) > LOOKUPS_SYNC_CACHED_COUNT) {
 		atomic_set_bit(DDTABLE_SYNC_START, &ddtable->flags);
 		chan_wakeup_one_nointr(ddtable->sync_wait);
 	}
@@ -271,7 +269,7 @@ ddtable_ddlookup_free_list(struct ddtable *ddtable, struct ddlookup_node_list *l
 	while ((ddlookup = SLIST_FIRST(lhead)) != NULL) {
 		SLIST_REMOVE_HEAD(lhead, p_list);
 		wait_on_chan(ddlookup->ddlookup_wait, !atomic_test_bit_short(DDLOOKUP_META_DATA_READ_DIRTY, &ddlookup->flags) && !atomic_test_bit_short(DDLOOKUP_META_DATA_DIRTY, &ddlookup->flags));
-		debug_check(atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags) && !node_in_standby());
+		debug_check(atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags));
 		node = node_get(ddtable, ddlookup->b_start);
 		LIST_REMOVE_INIT(ddlookup, n_list);
 		node_unlock(node);
@@ -284,7 +282,7 @@ ddtable_ddlookup_free_list(struct ddtable *ddtable, struct ddlookup_node_list *l
 void
 ddtable_ddlookup_node_free(struct ddtable_ddlookup_node *ddlookup)
 {
-	debug_check(atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags) && !node_in_standby());
+	debug_check(atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags));
 
 	if (ddlookup->metadata)
 		vm_pg_free(ddlookup->metadata);
@@ -340,7 +338,6 @@ ddtable_ddlookup_io(struct ddtable *ddtable, struct ddtable_ddlookup_node *ddloo
 		atomic_set_bit_short(DDLOOKUP_META_DATA_DIRTY, &ddlookup->flags);
 		atomic_clear_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags);
 		atomic_clear_bit_short(DDLOOKUP_META_DATA_CLONED, &ddlookup->flags);
-		node_ddlookup_sync_send(ddtable, ddlookup, root_id, prev_b_start);
 		DD_INC(ddlookups_synced, 1);
 	}
 	else {
@@ -660,7 +657,7 @@ static int dd_sync_thread(void *data)
 			pause("sync psg", 200);
 		}
 
-		if (atomic_read(&ddtable->sync_count) < LOOKUPS_SYNC_CACHED_COUNT || atomic_test_bit(DDTABLE_IN_SYNC, &ddtable->flags) || node_in_standby()) {
+		if (atomic_read(&ddtable->sync_count) < LOOKUPS_SYNC_CACHED_COUNT || atomic_test_bit(DDTABLE_IN_SYNC, &ddtable->flags)) {
 			debug_info("sync count %d cached count %d\n", atomic_read(&ddtable->sync_count), LOOKUPS_SYNC_CACHED_COUNT);
 			atomic_clear_bit(DDTABLE_SYNC_START, &ddtable->flags);
 			atomic_clear_bit(DDTABLE_IN_SYNC_THR, &ddtable->flags);
@@ -685,7 +682,7 @@ static int dd_sync_thread(void *data)
 			node_ddlookup_unlock(ddlookup);
 
 			ddtable_ddlookup_node_put(ddlookup);
-			if ((i >= todo && atomic_read(&write_requests)) || kernel_thread_check(&ddtable->flags, DDTABLE_SYNC_EXIT) || (i > 512) || node_in_standby()) 
+			if ((i >= todo && atomic_read(&write_requests)) || kernel_thread_check(&ddtable->flags, DDTABLE_SYNC_EXIT) || (i > 512))
 				break;
 
 			debug_check(atomic_read(&write_requests) < 0);
@@ -784,7 +781,7 @@ ddtables_sync(struct ddtable *ddtable, int dd_idx, int max, int rw)
 	int retval;
 	int error = 0;
 
-	if (max == dd_idx || (node_in_standby() && is_write_iop(rw)))
+	if (max == dd_idx)
 		return 0;
 
 	tcache = tcache_alloc((max - dd_idx));
@@ -1987,9 +1984,6 @@ ddtable_ddlookup_sync(struct ddtable *ddtable, struct ddtable_ddlookup_node *ddl
 	struct raw_ddtable_ddlookup_node *raw_ddlookup;
 	int retval;
 	uint32_t num_entries = 0;
-
-	if (node_in_standby())
-		return 0;
 
 	raw_ddlookup = (struct raw_ddtable_ddlookup_node *)(((uint8_t *)vm_pg_address(ddlookup->metadata)) + RAW_LOOKUP_OFFSET);
 	num_entries = raw_ddlookup->num_entries;
