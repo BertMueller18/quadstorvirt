@@ -22,7 +22,6 @@
 #include "tcache.h"
 #include "vdevdefs.h"
 #include "node_sock.h"
-#include "node_ha.h"
 #include "../common/cluster_common.h" 
 
 void
