@@ -111,8 +111,6 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 		break;
 	case TLTARGIOCNEWBLKDEV:
 	case TLTARGIOCDELBLKDEV:
-	case TLTARGIOCNEWBDEVSTUB:
-	case TLTARGIOCDELETEBDEVSTUB:
 	case TLTARGIOCGETBLKDEV:
 	case TLTARGIOCHACONFIG:
 	case TLTARGIOCUNMAPCONFIG:
@@ -128,10 +126,6 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 			retval = (*kcbs.bdev_add_new)(bdev_info);
 		else if (cmd == TLTARGIOCDELBLKDEV)
 			retval = (*kcbs.bdev_remove)(bdev_info);
-		else if (cmd == TLTARGIOCNEWBDEVSTUB)
-			retval = (*kcbs.bdev_add_stub)(bdev_info);
-		else if (cmd == TLTARGIOCDELETEBDEVSTUB)
-			retval = (*kcbs.bdev_remove_stub)(bdev_info);
 		else if (cmd == TLTARGIOCGETBLKDEV)
 			retval = (*kcbs.bdev_get_info)(bdev_info);
 		else if (cmd == TLTARGIOCHACONFIG)
@@ -183,9 +177,6 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 	case TLTARGIOCMODIFYTDISK:
 	case TLTARGIOCTDISKSTATS:
 	case TLTARGIOCTDISKRESETSTATS:
-	case TLTARGIOCNEWTDISKSTUB:
-	case TLTARGIOCDELETETDISKSTUB:
-	case TLTARGIOCDISABLETDISKSTUB:
 	case TLTARGIOCRESIZETDISK:
 	case TLTARGIOCRENAMETDISK:
 	case TLTARGIOCSETMIRRORROLE:
@@ -212,12 +203,6 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 			retval = (*kcbs.target_vdisk_reset_stats)(tdisk_info, (unsigned long)arg);
 		else if (cmd == TLTARGIOCNEWTDISK)
 			retval = (*kcbs.target_new_vdisk)(tdisk_info, (unsigned long)arg);
-		else if (cmd == TLTARGIOCNEWTDISKSTUB)
-			retval = (*kcbs.target_new_vdisk_stub)(tdisk_info, (unsigned long)arg);
-		else if (cmd == TLTARGIOCDELETETDISKSTUB)
-			retval = (*kcbs.target_delete_vdisk_stub)(tdisk_info, (unsigned long)arg);
-		else if (cmd == TLTARGIOCDISABLETDISKSTUB)
-			retval = (*kcbs.target_disable_vdisk_stub)(tdisk_info, (unsigned long)arg);
 		else if (cmd == TLTARGIOCRESIZETDISK)
 			retval = (*kcbs.target_resize_vdisk)(tdisk_info, (unsigned long)arg);
 		else if (cmd == TLTARGIOCRENAMETDISK)
