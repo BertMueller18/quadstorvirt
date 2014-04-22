@@ -34,7 +34,7 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 	struct tdisk_info *tdisk_info;
 	struct mdaemon_info mdaemon_info;
 	struct node_config *node_config;
-	struct clone_config clone_config;
+	struct clone_config *clone_config;
 	struct group_conf *group_conf;
 	struct fc_rule_config fc_rule_config;
 
@@ -78,36 +78,38 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 	case TLTARGIOCMIRRORSTATUS:
 	case TLTARGIOCMIRRORCANCEL:
 	case TLTARGIOCMIRRORREMOVE:
-		memcpy(&clone_config, arg, sizeof(clone_config));
-		if (cmd == TLTARGIOCCLONEVDISK) {
-			retval = (*kcbs.vdisk_clone)(&clone_config);
+		clone_config = malloc(sizeof(*clone_config), M_COREBSD, M_NOWAIT);
+		if (!clone_config) {
+			retval = -ENOMEM;
+			break;
 		}
+
+		memcpy(clone_config, arg, sizeof(*clone_config));
+		if (cmd == TLTARGIOCCLONEVDISK)
+			retval = (*kcbs.vdisk_clone)(clone_config);
 		else if (cmd == TLTARGIOCCLONESTATUS) {
-			retval = (*kcbs.vdisk_clone_status)(&clone_config);
+			retval = (*kcbs.vdisk_clone_status)(clone_config);
 			if (retval == 0)
-				memcpy(userp, &clone_config, sizeof(clone_config));
+				memcpy(userp, clone_config, sizeof(*clone_config));
 		}
-		else if (cmd == TLTARGIOCCLONECANCEL) {
-			retval = (*kcbs.vdisk_clone_cancel)(&clone_config);
-		}
+		else if (cmd == TLTARGIOCCLONECANCEL)
+			retval = (*kcbs.vdisk_clone_cancel)(clone_config);
 		else if (cmd == TLTARGIOCMIRRORVDISK) {
-			retval = (*kcbs.vdisk_mirror)(&clone_config);
-			memcpy(userp, &clone_config, sizeof(clone_config));
+			retval = (*kcbs.vdisk_mirror)(clone_config);
+			memcpy(userp, clone_config, sizeof(*clone_config));
 		}
 		else if (cmd == TLTARGIOCMIRRORSTATUS) {
-			retval = (*kcbs.vdisk_mirror_status)(&clone_config);
+			retval = (*kcbs.vdisk_mirror_status)(clone_config);
 			if (retval == 0)
-				memcpy(userp, &clone_config, sizeof(clone_config));
+				memcpy(userp, clone_config, sizeof(*clone_config));
 		}
-		else if (cmd == TLTARGIOCMIRRORCANCEL) {
-			retval = (*kcbs.vdisk_mirror_cancel)(&clone_config);
-		}
-		else if (cmd == TLTARGIOCMIRRORREMOVE) {
-			retval = (*kcbs.vdisk_mirror_remove)(&clone_config);
-		}
-		else {
+		else if (cmd == TLTARGIOCMIRRORCANCEL)
+			retval = (*kcbs.vdisk_mirror_cancel)(clone_config);
+		else if (cmd == TLTARGIOCMIRRORREMOVE)
+			retval = (*kcbs.vdisk_mirror_remove)(clone_config);
+		else
 			retval = -1;
-		}
+		free(clone_config, M_COREBSD);
 		break;
 	case TLTARGIOCNEWBLKDEV:
 	case TLTARGIOCDELBLKDEV:

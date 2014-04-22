@@ -1637,7 +1637,7 @@ static int coremod_ioctl(vnode_t *i, struct file *f, uint32_t cmd, unsigned long
 	struct tdisk_info *tdisk_info;
 	struct mdaemon_info mdaemon_info;
 	struct node_config *node_config;
-	struct clone_config clone_config;
+	struct clone_config *clone_config;
 	struct group_conf *group_conf = NULL;
 	struct fc_rule_config fc_rule_config;
 
@@ -1714,37 +1714,42 @@ static int coremod_ioctl(vnode_t *i, struct file *f, uint32_t cmd, unsigned long
 	case TLTARGIOCMIRRORSTATUS:
 	case TLTARGIOCMIRRORCANCEL:
 	case TLTARGIOCMIRRORREMOVE:
-		if ((retval = copyin(userp, &clone_config, sizeof(clone_config))) != 0)
+		clone_config = malloc(sizeof(*clone_config), M_QUADSTOR, M_NOWAIT);
+		if (!clone_config) {
+			retval = -ENOMEM;
 			break;
-		if (cmd == TLTARGIOCCLONEVDISK) {
-			retval = (*kcbs.vdisk_clone)(&clone_config);
 		}
+
+		if ((retval = copyin(userp, clone_config, sizeof(*clone_config))) != 0) {
+			free(clone_config, M_QUADSTOR);
+			break;
+		}
+
+		if (cmd == TLTARGIOCCLONEVDISK)
+			retval = (*kcbs.vdisk_clone)(clone_config);
 		else if (cmd == TLTARGIOCCLONESTATUS) {
-			retval = (*kcbs.vdisk_clone_status)(&clone_config);
+			retval = (*kcbs.vdisk_clone_status)(clone_config);
 			if (retval == 0)
-				retval = copyout(&clone_config, userp, sizeof(clone_config));
+				retval = copyout(clone_config, userp, sizeof(*clone_config));
 		}
-		else if (cmd == TLTARGIOCCLONECANCEL) {
-			retval = (*kcbs.vdisk_clone_cancel)(&clone_config);
-		}
+		else if (cmd == TLTARGIOCCLONECANCEL)
+			retval = (*kcbs.vdisk_clone_cancel)(clone_config);
 		else if (cmd == TLTARGIOCMIRRORVDISK) {
-			retval = (*kcbs.vdisk_mirror)(&clone_config);
-			err = copyout(&clone_config, userp, sizeof(clone_config));
+			retval = (*kcbs.vdisk_mirror)(clone_config);
+			err = copyout(clone_config, userp, sizeof(*clone_config));
 		}
 		else if (cmd == TLTARGIOCMIRRORSTATUS) {
-			retval = (*kcbs.vdisk_mirror_status)(&clone_config);
+			retval = (*kcbs.vdisk_mirror_status)(clone_config);
 			if (retval == 0)
-				retval = copyout(&clone_config, userp, sizeof(clone_config));
+				retval = copyout(clone_config, userp, sizeof(*clone_config));
 		}
-		else if (cmd == TLTARGIOCMIRRORCANCEL) {
-			retval = (*kcbs.vdisk_mirror_cancel)(&clone_config);
-		}
-		else if (cmd == TLTARGIOCMIRRORREMOVE) {
-			retval = (*kcbs.vdisk_mirror_remove)(&clone_config);
-		}
-		else {
+		else if (cmd == TLTARGIOCMIRRORCANCEL)
+			retval = (*kcbs.vdisk_mirror_cancel)(clone_config);
+		else if (cmd == TLTARGIOCMIRRORREMOVE)
+			retval = (*kcbs.vdisk_mirror_remove)(clone_config);
+		else
 			retval = -1;
-		}
+		free(clone_config, M_QUADSTOR);
 		break;
 	case TLTARGIOCNEWBLKDEV:
 	case TLTARGIOCDELBLKDEV:
