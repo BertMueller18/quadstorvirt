@@ -563,7 +563,6 @@ int subgroup_write_io(struct index_subgroup *subgroup, struct tcache **ret_tcach
 	pagestruct_t *metadata;
 	struct index_group *group = subgroup->group;
 	struct bdevint *bint = group->bint;
-	uint64_t write_id;
 
 	tcache = tcache_alloc(subgroup->max_indexes);
 	iowaiters_move(&tcache->io_waiters, &subgroup->io_waiters);
@@ -581,7 +580,6 @@ int subgroup_write_io(struct index_subgroup *subgroup, struct tcache **ret_tcach
 		atomic_clear_bit(META_DATA_CLONED, &index->flags);
 		atomic_clear_bit(META_WRITE_PENDING, &index->flags);
 		index_write_csum(bint, index, incr);
-		write_id = index->write_id;
 		index_unlock(index);
 		SLIST_INSERT_HEAD(&tcache->priv.meta_list, index, tc_list);
 		__tcache_add_page(tcache, metadata, bint_index_bstart(bint, index->index_id), bint, BINT_BMAP_SIZE, QS_IO_WRITE, subgroup_end_bio);
