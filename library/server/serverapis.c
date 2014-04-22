@@ -171,6 +171,24 @@ tdisk_remove(struct tdisk_info *tdisk_info)
 	tdisk_list[tdisk_info->target_id] = NULL;
 }
 
+struct tl_blkdevinfo *
+blkdev_find(uint32_t bid)
+{
+	struct tl_blkdevinfo *blkdev;
+	int i;
+
+	for (i = 1; i < TL_MAX_DISKS; i++) {
+		blkdev = bdev_list[i];
+		if (!blkdev)
+			continue;
+		if (blkdev->bid == bid)
+		{
+			return blkdev;
+		}
+	}
+	return NULL;	
+}
+
 struct group_info * 
 find_group(uint32_t group_id)
 {

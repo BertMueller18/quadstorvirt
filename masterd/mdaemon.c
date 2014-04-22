@@ -94,6 +94,7 @@ int main(int argc, char *argv[])
 {
 	int retval;
 	struct rlimit rlimit;
+	pthread_t mainloop_id;
 
 	daemonize();
 
@@ -112,26 +113,14 @@ int main(int argc, char *argv[])
 	gvinum_init();
 #endif
 
-	if (strstr(argv[0], "/mdaemon")) {
-		pthread_t mainloop_id;
-
-		signal(SIGTERM, term_handler);
-		retval = main_server_start(&mainloop_id);
-		if (retval != 0) {
-			DEBUG_ERR("Unable to start mainloop\n");
-			exit(1);
-		}
-
-		(void) pthread_join(mainloop_id, NULL);
-		DEBUG_INFO("main: exiting cleanly\n");
+	signal(SIGTERM, term_handler);
+	retval = main_server_start(&mainloop_id);
+	if (retval != 0) {
+		DEBUG_ERR("Unable to start mainloop\n");
+		exit(1);
 	}
-	else {
-		extern int node_client_init(void);
-		retval = node_client_init();
-		if (retval != 0) {
-			DEBUG_ERR("node client init failed\n");
-			exit(1);
-		}
-	}
+
+	(void) pthread_join(mainloop_id, NULL);
+	DEBUG_INFO("main: exiting cleanly\n");
 	return 0;
 }

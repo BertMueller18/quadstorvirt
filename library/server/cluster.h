@@ -93,7 +93,6 @@ enum {
 int node_controller_init(void);
 int node_controller_init_pre(void);
 int node_recv_init(void);
-int node_client_init(void);
 void tl_server_node_config(struct tl_comm *comm, struct tl_msg *msg);
 int tl_server_start_mirror(struct tl_comm *comm, struct tl_msg *msg);
 int tl_server_remove_mirror(struct tl_comm *comm, struct tl_msg *msg);
