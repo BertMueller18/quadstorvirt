@@ -820,10 +820,7 @@ node_exit(void)
 		node_master_exit();
 	else if (node_type_master()) {
 		node_master_exit();
-		node_client_exit();
 	}
-	else if (node_type_client())
-		node_client_exit();
 
 	if (!node_transaction_lock)
 		return;
@@ -838,24 +835,12 @@ node_exit(void)
 	node_transaction_lock = NULL;
 }
 
-extern struct node_config master_config;
-extern struct node_config client_config;
 extern int recv_flags;
-extern int master_flags;
-extern int client_flags;
-extern atomic_t sync_status;
-extern struct node_comm *root;
 
 uint64_t
 node_get_tprt(void)
 {
-	if (node_type_controller())
-		return master_config.controller_ipaddr;
-	else if (node_type_master())
-		return master_config.node_ipaddr;
-	else if (node_type_client())
-		return client_config.node_ipaddr;
-	else if (node_type_receiver())
+	if (node_type_receiver())
 		return recv_config.recv_ipaddr;
 	else
 		return 1;

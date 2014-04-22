@@ -456,11 +456,7 @@ devq_process_queue(void)
 			continue;
 		}
 
-		/* process the commands.  */
-		if (((struct tdisk *)ccb_h->tdisk)->remote)
-			node_client_proc_cmd(ccb_h->tdisk, ccb_h);
-		else
-			tdisk_proc_cmd(ccb_h->tdisk, ccb_h);
+		tdisk_proc_cmd(ccb_h->tdisk, ccb_h);
 	}
 }
 
