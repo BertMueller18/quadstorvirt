@@ -967,7 +967,6 @@ int bdevs_fix_rids(void);
 void bint_reset(struct bdevint *bint);
 int bint_fix_rid(struct bdevint *bint);
 struct bdevgroup * bdev_group_get_log_group(struct bdevgroup *group);
-int bdev_conditional_ref(struct bdevint *bint, uint64_t b_start, struct index_sync_list *index_sync_list);
 
 static inline int
 bint_unmap_supported(struct bdevint *bint)

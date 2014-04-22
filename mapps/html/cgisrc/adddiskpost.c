@@ -47,10 +47,6 @@ int main()
 	if (tmp && (strcasecmp(tmp, "on") == 0))
 		log_disk = 1;
 
-	tmp = cgi_val(entries, "ha_disk");
-	if (tmp && (strcasecmp(tmp, "on") == 0))
-		ha_disk = 1;
-
 	tmp = cgi_val(entries, "group_id");
 	if (tmp)
 		group_id = strtoull(tmp, NULL, 10);

@@ -165,11 +165,6 @@ int main()
 						strcat(status, " ");
 					strcat(status, "L");
 				}
-				if (config->ha_disk) {
-					if (strlen(status) > 0)
-						strcat(status, " ");
-					strcat(status, "H");
-				}
 				if (config->unmap) {
 					if (strlen(status) > 0)
 						strcat(status, " ");

@@ -23,28 +23,22 @@
 #include "sense.h"
 #include "node_sock.h"
 #include "rcache.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "ddthread.h"
 #include "../common/cluster_common.h" 
 #include "bdevgroup.h"
 #include "node_mirror.h"
 
 struct node_comm *root;
-struct node_comm *sync_root;
 
 wait_chan_t *master_wait;
 wait_chan_t *master_cleanup_wait;
-wait_chan_t *master_sync_wait;
 static kproc_t *master_task;
 static kproc_t *master_cleanup_task;
-static kproc_t *master_sync_task;
 extern kproc_t *recv_task;
 extern wait_chan_t *recv_wait;
 extern int recv_flags;
 int master_flags;
 static int master_cleanup_flags;
-static int master_sync_flags;
 static struct queue_list master_queue_list = TAILQ_HEAD_INITIALIZER(master_queue_list);
 static mtx_t *master_queue_lock;
 struct node_config master_config;
@@ -939,8 +933,6 @@ __node_master_write_post_pre(struct tdisk *tdisk, struct write_list *wlist, stru
 	if (unlikely(retval != 0))
 		return -1;
 
-	node_newmeta_sync_start(tdisk, wlist);
-	node_pgdata_sync_start(tdisk, wlist, pglist, pglist_cnt);
 	log_list_end_writes(&wlist->log_list);
 	atomic_set_bit(WLIST_DONE_LOG_END, &wlist->flags);
 
@@ -975,7 +967,6 @@ node_master_write_post(struct tdisk *tdisk, struct write_list *wlist, struct qsi
 	ctio->dxfer_len = 0;
 
 	msg->wlist = NULL;
-	node_pgdata_sync_client_done(tdisk, wlist->transaction_id);
 	pgdata_post_write(tdisk, pglist, pglist_cnt, wlist);
 
 	device_send_ccb(ctio);
@@ -1012,14 +1003,6 @@ __node_master_write_pre(struct tdisk *tdisk, struct qsio_scsiio *ctio, int cw)
 	raw = msg->raw;
 	wlist = msg->wlist;
 	debug_check(!wlist);
-
-	if (node_in_standby()) {
-		ctio_free_data(ctio);
-		ctio->scsi_status = SCSI_STATUS_BUSY;
-		free_block_refs(tdisk, &wlist->index_info_list);
-		device_send_ccb(ctio);
-		return;
-	}
 
 	lba = be64toh(*(uint64_t *)(&cdb[2]));
 	transfer_length = be32toh(*(uint32_t *)(&cdb[10]));
@@ -2254,100 +2237,6 @@ err2:
 	device_send_ccb(ctio);
 }
 
-static void
-node_master_sync_status(struct node_sock *sock, struct raw_node_msg *raw)
-{
-	if (node_sync_get_status() == NODE_SYNC_INPROGRESS)
-		raw->msg_status = NODE_STATUS_INITIALIZING;
-	else if (node_sync_get_status() == NODE_SYNC_DONE)
-		raw->msg_status = NODE_STATUS_OK;
-	else
-		raw->msg_status = NODE_STATUS_ERROR;
-
-	node_msg_compute_csum(raw);
-	node_sock_write(sock, raw);
-}
-
-void
-node_master_sync_wait(void)
-{
-	while (node_sync_get_status() == NODE_SYNC_INPROGRESS) {
-		debug_info("wait for sync progress\n");
-		pause("psg", 1000);
-	}
-}
-
-static void
-node_master_sync_start(struct node_sock *sock, struct raw_node_msg *raw)
-{
-	int retval;
-
-	debug_info("log error %d node_role %d\n", node_get_role());
-	if (!atomic_read(&kern_inited)) {
-		raw->msg_status = NODE_STATUS_ERROR;
-		node_msg_compute_csum(raw);
-		node_sock_write(sock, raw);
-		return;
-	}
-
-	if (node_get_role() != NODE_ROLE_MASTER || (node_sync_get_status() == NODE_SYNC_INPROGRESS)) {
-		raw->msg_status = NODE_STATUS_BUSY;
-		node_msg_compute_csum(raw);
-		node_sock_write(sock, raw);
-		return;
-	}
-
-	if (node_type_controller()) {
-		if (sock->comm->node_ipaddr != master_config.ha_ipaddr) {
-			debug_warn("Received sync from unknown node %u master config ha ipaddr %u\n", sock->comm->node_ipaddr, master_config.ha_ipaddr);
-			raw->msg_status = NODE_STATUS_ERROR;
-			node_msg_compute_csum(raw);
-			node_sock_write(sock, raw);
-			return;
-		}
-	}
-
-	retval = node_sync_comm_init(master_config.ha_ipaddr, master_config.ha_bind_ipaddr);
-	if (unlikely(retval != 0)) {
-		debug_warn("sync comm init failed\n");
-		raw->msg_status = NODE_STATUS_ERROR;
-		node_msg_compute_csum(raw);
-		node_sock_write(sock, raw);
-		return;
-	}
-
-	node_sync_set_status(NODE_SYNC_UNKNOWN);
-	node_sync_pre();
-	node_sync_set_status(NODE_SYNC_INPROGRESS);
-	raw->msg_status = NODE_STATUS_OK;
-	node_msg_compute_csum(raw);
-	node_sock_write(sock, raw);
-	retval = node_sync_setup_bdevs();
-	if (retval == 0)
-		node_sync_set_status(NODE_SYNC_DONE);
-}
-
-static void
-node_master_role(struct node_sock *sock, struct raw_node_msg *raw)
-{
-	raw->cmd_status = node_get_role();
-	node_msg_compute_csum(raw);
-	node_sock_write(sock, raw);
-}
-
-static void
-node_master_ha_ping(struct node_sock *sock, struct raw_node_msg *raw)
-{
-	ha_set_ping_recv();
-	if (node_sync_get_status() == NODE_SYNC_ERROR)
-		raw->msg_status = NODE_STATUS_NEED_RESYNC;
-	else
-		raw->msg_status = NODE_STATUS_OK;
-
-	node_msg_compute_csum(raw);
-	node_sock_write(sock, raw);
-}
-
 void
 node_master_register(struct node_sock *sock, struct raw_node_msg *raw, int node_register, int *flags, wait_chan_t *wait, struct queue_list *queue_list, mtx_t *queue_lock, int notify)
 {
@@ -2382,37 +2271,6 @@ node_master_register(struct node_sock *sock, struct raw_node_msg *raw, int node_
 		atomic_set_bit(MASTER_CLEANUP, flags);
 		chan_wakeup_nointr(wait);
 	}
-
-	if (notify) {
-		node_sync_register_send(comm, node_register);
-		if (node_sync_get_status() == NODE_SYNC_DONE)
-			__node_client_notify_ha_status(comm->node_ipaddr, 1);
-	}
-}
-
-static int
-node_in_standby_check(struct node_sock *sock, struct raw_node_msg *raw)
-{
-	if (!node_in_standby() && atomic_read(&kern_inited))
-		return 0;
-
-	switch (raw->msg_cmd) {
-	case NODE_MSG_GENERIC_CMD:
-	case NODE_MSG_PERSISTENT_RESERVE_OUT_CMD:
-	case NODE_MSG_WRITE_CMD:
-	case NODE_MSG_READ_CMD:
-	case NODE_MSG_AMAP_CHECK:
-		break;
-	default:
-		return 0;
-	}
-
-	debug_info("Skipping cmd %d msg id %llx\n", raw->msg_cmd, (unsigned long long)raw->msg_id);
-	raw->dxfer_len = 0;
-	raw->pg_count = 0;
-	node_resp_msg(sock, raw, NODE_STATUS_BUSY);
-	node_sock_read_error(sock);
-	return 1;
 }
 
 uint32_t master_register_ticks;
@@ -2435,10 +2293,6 @@ node_recv_cmd(struct node_sock *sock, struct raw_node_msg *raw)
 #ifdef ENABLE_STATS
 	uint32_t start_ticks;
 #endif
-
-	if (node_in_standby_check(sock, raw)) {
-		return;
-	}
 
 	switch (raw->msg_cmd) {
 	case NODE_MSG_REGISTER:
@@ -2519,212 +2373,6 @@ node_recv_cmd(struct node_sock *sock, struct raw_node_msg *raw)
 }
 
 static int
-node_sync_in_standby_check(struct node_sock *sock, struct raw_node_msg *raw)
-{
-	if (node_in_standby())
-		return 0;
-
-	switch (raw->msg_cmd) {
-	case NODE_MSG_ROLE:
-	case NODE_MSG_SYNC_START:
-	case NODE_MSG_SYNC_STATUS:
-	case NODE_MSG_REGISTER:
-	case NODE_MSG_UNREGISTER:
-	case NODE_MSG_HA_PING:
-	case NODE_MSG_COMM_SYNC:
-	case NODE_MSG_SYNC_DISABLE:
-	case NODE_MSG_HA_RELINQUISH:
-	case NODE_MSG_HA_RELINQUISH_STATUS:
-	case NODE_MSG_HA_TAKEOVER:
-	case NODE_MSG_HA_TAKEOVER_POST:
-		return 0;
-	default:
-		break;
-	}
-
-	debug_info("Skipping cmd %d\n", raw->msg_cmd);
-	raw->dxfer_len = 0;
-	raw->pg_count = 0;
-	node_resp_msg(sock, raw, NODE_STATUS_IS_MASTER);
-	node_sock_read_error(sock);
-	return 1;
-
-}
-
-static void
-node_recv_sync_cmd(struct node_sock *sock, struct raw_node_msg *raw)
-{
-	if (node_sync_in_standby_check(sock, raw)) {
-		return;
-	}
-
-	switch (raw->msg_cmd) {
-	case NODE_MSG_ROLE:
-		node_master_role(sock, raw);
-		break;
-	case NODE_MSG_SYNC_START:
-		node_master_sync_start(sock, raw);
-		break;
-	case NODE_MSG_SYNC_STATUS:
-		node_master_sync_status(sock, raw);
-		break;
-	case NODE_MSG_REGISTER:
-		node_master_register(sock, raw, 1, &master_sync_flags, master_sync_wait, NULL, NULL, 0);
-		break;
-	case NODE_MSG_HA_PING:
-		node_master_ha_ping(sock, raw);
-		break;
-	case NODE_MSG_UNREGISTER:
-		node_master_register(sock, raw, 0, &master_sync_flags, master_sync_wait, NULL, NULL, 0);
-		break;
-	case NODE_MSG_COMM_SYNC:
-		node_sync_register_recv(sock, raw);
-		break;
-	case NODE_MSG_SYNC_DISABLE:
-		node_sync_disable_recv(sock, raw);
-		break;
-	case NODE_MSG_HA_RELINQUISH:
-		node_sync_relinquish_recv(sock, raw);
-		break;
-	case NODE_MSG_HA_RELINQUISH_STATUS:
-		node_sync_relinquish_status(sock, raw);
-		break;
-	case NODE_MSG_HA_TAKEOVER:
-		node_sync_takeover_recv(sock, raw);
-		break;
-	case NODE_MSG_HA_TAKEOVER_POST:
-		node_sync_takeover_post_recv(sock, raw);
-		break;
-	case NODE_MSG_AMAP_SYNC:
-		node_amap_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_AMAP_META_SYNC:
-		node_amap_meta_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_AMAP_SYNC_POST:
-		node_amap_sync_post_recv(sock, raw);
-		break;
-	case NODE_MSG_AMAP_TABLE_SYNC:
-		node_amap_table_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_TABLE_INDEX_SYNC:
-		node_table_index_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_AMAP_TABLE_META_SYNC:
-		node_amap_table_meta_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_AMAP_TABLE_SYNC_POST:
-		node_amap_table_sync_post_recv(sock, raw);
-		break;
-	case NODE_MSG_TDISK_SYNC:
-		node_tdisk_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_TDISK_UPDATE:
-		node_tdisk_update_recv(sock, raw);
-		break;
-	case NODE_MSG_TDISK_DELETE:
-		node_tdisk_delete_recv(sock, raw);
-		break;
-	case NODE_MSG_LOG_SYNC:
-		node_log_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_LOG_SYNC_POST:
-		node_log_sync_post_recv(sock, raw);
-		break;
-	case NODE_MSG_DDLOOKUP_SYNC:
-		node_ddlookup_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_DDLOOKUP_SYNC_POST:
-		node_ddlookup_sync_post_recv(sock, raw);
-		break;
-	case NODE_MSG_INDEX_LOOKUP_SYNC:
-		node_index_lookup_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_BINT_SYNC:
-		node_bint_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_BINT_DELETE:
-		node_bint_delete_recv(sock, raw);
-		break;
-	case NODE_MSG_BINT_INDEX_SYNC:
-		node_bintindex_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_BINT_INDEX_SYNC_POST:
-		node_bintindex_sync_post_recv(sock, raw);
-		break;
-	case NODE_MSG_NEWMETA_SYNC_START:
-		node_newmeta_sync_start_recv(sock, raw);
-		break;
-	case NODE_MSG_PGDATA_SYNC_START:
-		node_pgdata_sync_start_recv(sock, raw);
-		break;
-	case NODE_MSG_PGDATA_SYNC_CLIENT_DONE:
-		node_pgdata_sync_client_done_recv(sock, raw);
-		break;
-	case NODE_MSG_NEWMETA_SYNC_COMPLETE:
-		node_newmeta_sync_complete_recv(sock, raw);
-		break;
-	case NODE_MSG_PGDATA_SYNC_COMPLETE:
-		node_pgdata_sync_complete_recv(sock, raw);
-		break;
-	case NODE_MSG_REGISTRATION_SYNC:
-		node_registration_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_ISTATE_CLEAR:
-		node_istate_clear_recv(sock, raw);
-		break;
-	case NODE_MSG_SENSE_STATE:
-		node_sense_state_recv(sock, raw);
-		break;
-	case NODE_MSG_REGISTRATION_CLEAR_SYNC:
-		node_registration_clear_sync_recv(sock, raw);
-		break;
-	case NODE_MSG_RESERVATION_SYNC:
-		node_reservation_sync_recv(sock, raw);
-		break;
-	default:
-		debug_warn("Unknown node msg %d received\n", raw->msg_cmd);
-		node_error_resp_msg(sock, raw, NODE_STATUS_INVALID_MSG);
-		break;
-	}
-}
-
-static int
-node_master_sync_recv(struct node_sock *sock)
-{
-	int retval;
-	struct raw_node_msg raw;
-
-	while (1) {
-		retval = node_sock_read(sock, &raw, sizeof(raw));
-		if (retval != 0) {
-			atomic_set_bit(NODE_COMM_CLEANUP, &sock->comm->flags);
-			atomic_set_bit(MASTER_CLEANUP, &master_sync_flags);
-			chan_wakeup_nointr(master_sync_wait);
-			return -1;
-		}
-
-		if (unlikely(!node_msg_csum_valid(&raw))) {
-			debug_warn("Received msg with invalid csum\n");
-			node_sock_read_error(sock);
-			atomic_set_bit(NODE_COMM_CLEANUP, &sock->comm->flags);
-			atomic_set_bit(MASTER_CLEANUP, &master_sync_flags);
-			chan_wakeup_nointr(master_sync_wait);
-			return -1;
-		}
-
-		node_recv_sync_cmd(sock, &raw);
-		if (sock_state_error(sock)) {
-			atomic_set_bit(NODE_COMM_CLEANUP, &sock->comm->flags);
-			atomic_set_bit(MASTER_CLEANUP, &master_sync_flags);
-			chan_wakeup_nointr(master_sync_wait);
-			return -1;
-		}
-	}
-	return 0;
-}
-
-static int
 node_master_recv(struct node_sock *sock)
 {
 	int retval;
@@ -2756,44 +2404,6 @@ node_master_recv(struct node_sock *sock)
 			atomic_set_bit(MASTER_CLEANUP, &master_flags);
 			chan_wakeup_nointr(master_wait);
 			return -1;
-		}
-	}
-	return 0;
-}
-
-static int
-node_master_sync_accept(struct node_sock *recv_sock)
-{
-	struct node_sock *sock;
-	struct node_comm *comm;
-	uint32_t ipaddr;
-	int error = 0, retval;
-
-	while (1) {
-		sock = __node_sock_alloc(NULL, node_master_sync_recv); 
-		sock->lsock = sock_accept(recv_sock->lsock, sock, &error, &ipaddr);
-		if (!sock->lsock || !atomic_read(&kern_inited)) {
-			node_sock_free(sock, 1);
-			if (error) {
-				return -1;
-			}
-			return 0;
-		}
-
-		comm = node_comm_locate(node_sync_accept_hash, ipaddr, sync_root);
-		sock->comm = comm;
-		node_comm_lock(comm);
-		retval = kernel_thread_create(node_sock_recv_thr, sock, sock->task, "ndsockmsna");
-		if (unlikely(retval != 0)) {
-			node_sock_free(sock, 1);
-			node_comm_unlock(comm);
-			return -1;
-		}
-		TAILQ_INSERT_TAIL(&comm->sock_list, sock, s_list);
-		node_comm_unlock(comm);
-		if (sock->state == SOCK_STATE_CONNECTED) {
-			atomic_set_bit(NODE_SOCK_DATA, &sock->flags);
-			chan_wakeup(sock->sock_wait);
 		}
 	}
 	return 0;
@@ -2893,12 +2503,6 @@ node_master_proc_cmd(void *disk, void *iop)
 			ctio->scsi_status = SCSI_STATUS_RESERV_CONFLICT;
 			goto out;
 		}
-	}
-
-	if (node_in_standby()) {
-		ctio_free_data(ctio);
-		ctio->scsi_status = SCSI_STATUS_BUSY;
-		goto out;
 	}
 
 	switch(cdb[0]) {
@@ -3066,9 +2670,6 @@ node_cleanups_wait(void)
 	if (master_task)
 		wait_on_chan(master_wait, !atomic_test_bit(MASTER_IN_CLEANUP, &master_flags));
 
-	if (master_sync_task)
-		wait_on_chan(master_sync_wait, !atomic_test_bit(MASTER_IN_CLEANUP, &master_sync_flags));
-
 	if (recv_task)
 		wait_on_chan(recv_wait, !atomic_test_bit(MASTER_IN_CLEANUP, &recv_flags));
 #endif
@@ -3077,12 +2678,6 @@ node_cleanups_wait(void)
 void
 node_master_exit(void)
 {
-	if (sync_root) {
-		node_root_comm_free(sync_root, NULL, NULL);
-		node_comm_put(sync_root);
-		sync_root = NULL;
-	}
-
 	if (root) {
 		node_root_comm_free(root, &master_queue_list, master_queue_lock);
 		node_comm_put(root);
@@ -3100,25 +2695,15 @@ node_master_exit(void)
 		master_task = NULL;
 	}
 
-	if (master_sync_task) {
-		wait_on_chan(master_sync_wait, !atomic_test_bit(MASTER_IN_CLEANUP, &master_sync_flags));
-		kernel_thread_stop(master_sync_task, &master_sync_flags, master_sync_wait, MASTER_EXIT);
-		master_sync_task = NULL;
-	}
-
 	if (master_wait) {
 		wait_chan_free(master_wait);
 		master_wait = NULL;
 	}
-	if (master_sync_wait) {
-		wait_chan_free(master_sync_wait);
-		master_sync_wait = NULL;
-	}
+
 	if (master_cleanup_wait) {
 		wait_chan_free(master_cleanup_wait);
 		master_cleanup_wait = NULL;
 	}
-	node_sync_exit();
 
 	if (master_queue_lock) {
 		mtx_free(master_queue_lock);
@@ -3197,51 +2782,6 @@ master_queue_wait_for_empty(void)
 }
 
 #ifdef FREEBSD 
-static void node_master_sync_thr(void *data)
-#else
-static int node_master_sync_thr(void *data)
-#endif
-{
-	struct node_config *node_config = data;
-	int retval;
-
-	sync_root = node_comm_alloc(NULL, node_config->ha_ipaddr, node_config->ha_bind_ipaddr);
-	retval = node_sock_bind(sync_root, node_master_sync_accept, CONTROLLER_SYNC_PORT, "ndsockmsnr");
-	if (unlikely(retval != 0)) {
-		debug_warn("node master/controller sync init failed\n");
-		node_comm_put(sync_root);
-		sync_root = NULL;
-	}
-
-	atomic_set_bit(MASTER_INITED, &master_sync_flags);
-	chan_wakeup(master_sync_wait);
-
-	while(!kernel_thread_check(&master_sync_flags, MASTER_EXIT)) {
-		wait_on_chan_timeout(master_sync_wait, kernel_thread_check(&master_sync_flags, MASTER_EXIT), 10000);
-		if (unlikely(kernel_thread_check(&master_sync_flags, MASTER_EXIT)))
-			break;
-		if (atomic_test_bit(MASTER_CLEANUP, &master_sync_flags)) {
-			atomic_set_bit(MASTER_IN_CLEANUP, &master_sync_flags);
-			atomic_clear_bit(MASTER_CLEANUP, &master_sync_flags);
-			if (unlikely(kernel_thread_check(&master_sync_flags, MASTER_EXIT))) {
-				atomic_clear_bit(MASTER_IN_CLEANUP, &master_sync_flags);
-				chan_wakeup(master_sync_wait);
-				break;
-			}
-			if (sync_root)
-				node_master_cleanup(sync_root, NULL, NULL);
-			atomic_clear_bit(MASTER_IN_CLEANUP, &master_sync_flags);
-			chan_wakeup(master_sync_wait);
-		}
-	}
-#ifdef FREEBSD 
-	kproc_exit(0);
-#else
-	return 0;
-#endif
-}
-
-#ifdef FREEBSD 
 static void node_cleanup_thr(void *data)
 #else
 static int node_cleanup_thr(void *data)
@@ -3315,9 +2855,6 @@ node_master_init(struct node_config *node_config)
 	int retval;
 
 	SET_NODE_TIMEOUT(node_config, controller_recv_timeout, CONTROLLER_RECV_TIMEOUT_MIN, CONTROLLER_RECV_TIMEOUT_MAX);
-	SET_NODE_TIMEOUT(node_config, node_sync_timeout, NODE_SYNC_TIMEOUT_MIN, NODE_SYNC_TIMEOUT_MAX);
-	SET_NODE_TIMEOUT(node_config, ha_check_timeout, HA_CHECK_TIMEOUT_MIN, HA_CHECK_TIMEOUT_MAX);
-	SET_NODE_TIMEOUT(node_config, ha_ping_timeout, HA_PING_TIMEOUT_MIN, HA_PING_TIMEOUT_MAX);
 
 	if (master_wait)
 		return 0;
@@ -3326,7 +2863,6 @@ node_master_init(struct node_config *node_config)
 
 	master_wait = wait_chan_alloc("node master wait");
 	master_cleanup_wait = wait_chan_alloc("node master cleanup wait");
-	master_sync_wait = wait_chan_alloc("node master sync wait");
 	master_queue_lock = mtx_alloc("master queue lock");
 	TAILQ_INIT(&master_queue_list);
 
@@ -3342,13 +2878,6 @@ node_master_init(struct node_config *node_config)
 		return -1;
 	}
 
-	retval = kernel_thread_create(node_master_sync_thr, node_config, master_sync_task, "mstsynthr");
-	if (unlikely(retval != 0)) {
-		node_master_exit();
-		return -1;
-	}
-
 	wait_on_chan_interruptible(master_wait, atomic_test_bit(MASTER_INITED, &master_flags));
-	wait_on_chan_interruptible(master_sync_wait, atomic_test_bit(MASTER_INITED, &master_sync_flags));
 	return 0;
 }

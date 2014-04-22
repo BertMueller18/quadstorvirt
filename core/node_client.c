@@ -2052,10 +2052,7 @@ node_client_init(struct node_config *node_config)
 	int retval;
 
 	SET_NODE_TIMEOUT(node_config, client_send_timeout, CLIENT_SEND_TIMEOUT_MIN, CLIENT_SEND_TIMEOUT_MAX);
-	SET_NODE_TIMEOUT(node_config, ha_check_timeout, HA_CHECK_TIMEOUT_MIN, HA_CHECK_TIMEOUT_MAX);
-	SET_NODE_TIMEOUT(node_config, ha_ping_timeout, HA_PING_TIMEOUT_MIN, HA_PING_TIMEOUT_MAX);
 	SET_NODE_TIMEOUT(node_config, controller_recv_timeout, CONTROLLER_RECV_TIMEOUT_MIN, CONTROLLER_RECV_TIMEOUT_MAX);
-	SET_NODE_TIMEOUT(node_config, node_sync_timeout, NODE_SYNC_TIMEOUT_MIN, NODE_SYNC_TIMEOUT_MAX);
 
 	if (client_wait)
 		return node_client_reinit(node_config);

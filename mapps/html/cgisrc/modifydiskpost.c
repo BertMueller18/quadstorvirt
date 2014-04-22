@@ -39,10 +39,6 @@ int main()
 
 	memset(&disk, 0, sizeof(disk));
 
-	tmp = cgi_val(entries, "ha_disk");
-	if (tmp && (strcasecmp(tmp, "on") == 0))
-		disk.ha_disk = 1;
-
 	tmp = cgi_val(entries, "unmap");
 	if (tmp && (strcasecmp(tmp, "on") == 0))
 		disk.unmap = 1;

@@ -27,8 +27,6 @@
 #include <exportdefs.h>
 #include "cluster.h"
 #include "node_sock.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "bdevgroup.h"
 #include "../common/cluster_common.h" 
 #include "node_mirror.h"
@@ -46,9 +44,6 @@ int mirror_sync_recv_timeout = MIRROR_SYNC_RECV_TIMEOUT;
 int mirror_sync_send_timeout = MIRROR_SYNC_SEND_TIMEOUT;
 int client_send_timeout = CLIENT_SEND_TIMEOUT;
 int controller_recv_timeout = CONTROLLER_RECV_TIMEOUT;
-int node_sync_timeout = NODE_SYNC_TIMEOUT;
-int ha_check_timeout = HA_CHECK_TIMEOUT;
-int ha_ping_timeout = HA_PING_TIMEOUT;
 
 int
 qs_deflate_block(struct pgdata *pgdata, struct pgdata *comp_pgdata, uint32_t *comp_size, void *wrkmem, int algo)
@@ -130,7 +125,6 @@ calc_sector_bits(uint32_t sector_size, uint32_t *sector_shift)
 
 uma_t *write_bmap_cache;
 uma_t *group_write_bmap_cache;
-uma_t *node_sync_post_cache;
 uma_t *node_sock_cache;
 uma_t *node_comm_cache;
 uma_t *node_msg_cache;
@@ -238,10 +232,6 @@ exit_caches(void)
 	debug_info("node_msg_cache_free\n");
 	if (node_msg_cache)
 		uma_zdestroy(node_msg_cache);
-
-	debug_info("node_sync_post_cache_free\n");
-	if (node_sync_post_cache)
-		uma_zdestroy(node_sync_post_cache);
 
 	debug_info("node_sock_cache_free\n");
 	if (node_sock_cache)
@@ -444,12 +434,6 @@ init_caches(void)
 	CREATE_CACHE(node_msg_cache, "qs_node_msg", sizeof(struct node_msg));
 	if (!node_msg_cache) {
 		debug_warn("Cannot create node_msg cache\n");
-		return -1;
-	}
-
-	CREATE_CACHE(node_sync_post_cache, "qs_node_sync_post", sizeof(struct node_sync_post));
-	if (!node_sync_post_cache) {
-		debug_warn("Cannot create node_sync_post cache\n");
 		return -1;
 	}
 
@@ -768,9 +752,6 @@ __kern_exit(void)
 	debug_print("node cleanups wait\n");
 	node_cleanups_wait();
 
-	debug_print("node ha exit\n");
-	node_ha_exit();
-
 	for (i = 0; i < TL_MAX_DEVICES; i++) {
 		struct tdisk *tdisk = tdisks[i];
 
@@ -792,9 +773,6 @@ __kern_exit(void)
 
 	debug_print("exit gdevq threads\n");
 	exit_gdevq_threads();
-
-	debug_print("node sync exit threads\n");
-	node_sync_exit_threads();
 
 	debug_print("exit ddthreads\n");
 	exit_ddthreads();
@@ -1031,29 +1009,12 @@ coremod_load_done(void)
 		return -1;
 	}
 
-	if (!node_type_client() && !node_type_master()) {
-		retval = 0;
-		if (node_type_controller()) {
-			retval = node_controller_ha_init();
-			if (unlikely(retval < 0)) {
-				debug_warn_notify("node controller ha init failed\n");
-				return -1;
-			}
-		}
-
-		if (!node_in_standby() && !retval) {
-			bdevs_load_post();
-			retval = bdev_groups_replay_write_logs();
-			if (retval == 0) {
-				bdevs_fix_rids();
-				bdevs_load_ddtables_post();
-				tdisk_load_amaps();
-			}
-		}
-
-	}
-	else if (node_type_master()) {
-		node_master_ha_init();
+	bdevs_load_post();
+	retval = bdev_groups_replay_write_logs();
+	if (retval == 0) {
+		bdevs_fix_rids();
+		bdevs_load_ddtables_post();
+		tdisk_load_amaps();
 	}
 	return retval;
 }
@@ -1092,7 +1053,6 @@ kern_interface_init(struct qs_kern_cbs *kern_cbs)
 	kern_cbs->bdev_add_new = bdev_add_new;
 	kern_cbs->bdev_remove = bdev_remove;
 	kern_cbs->bdev_get_info = bdev_get_info;
-	kern_cbs->bdev_ha_config = bdev_ha_config;
 	kern_cbs->bdev_unmap_config = bdev_unmap_config;
 	kern_cbs->bdev_wc_config = bdev_wc_config;
 	kern_cbs->bdev_add_group = bdev_group_add; 
@@ -1154,19 +1114,8 @@ kern_interface_init(struct qs_kern_cbs *kern_cbs)
 		return -1;
 	}
 
-	retval = node_sync_init_threads();
-	if (unlikely(retval != 0)) {
-		exit_gdevq_threads();
-		rcache_exit();
-		pgzero_exit();
-		exit_globals();
-		exit_caches();
-		return -1;
-	}
-
 	retval = init_ddthreads();
 	if (unlikely(retval != 0)) {
-		node_sync_exit_threads();
 		exit_gdevq_threads();
 		rcache_exit();
 		pgzero_exit();

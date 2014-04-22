@@ -114,7 +114,6 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 	case TLTARGIOCNEWBLKDEV:
 	case TLTARGIOCDELBLKDEV:
 	case TLTARGIOCGETBLKDEV:
-	case TLTARGIOCHACONFIG:
 	case TLTARGIOCUNMAPCONFIG:
 	case TLTARGIOCWCCONFIG:
 		bdev_info = malloc(sizeof(struct bdev_info), M_COREBSD, M_WAITOK);
@@ -130,8 +129,6 @@ coremod_ioctl(struct cdev *dev, unsigned long cmd, caddr_t arg, int fflag, struc
 			retval = (*kcbs.bdev_remove)(bdev_info);
 		else if (cmd == TLTARGIOCGETBLKDEV)
 			retval = (*kcbs.bdev_get_info)(bdev_info);
-		else if (cmd == TLTARGIOCHACONFIG)
-			retval = (*kcbs.bdev_ha_config)(bdev_info);
 		else if (cmd == TLTARGIOCUNMAPCONFIG)
 			retval = (*kcbs.bdev_unmap_config)(bdev_info);
 		else if (cmd == TLTARGIOCWCCONFIG)

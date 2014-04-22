@@ -76,11 +76,6 @@ int main()
 	printf ("<td><input type=\"checkbox\" name=\"log_disk\"></td>\n"); 
 	printf ("</tr>\n");
 
-	printf ("<tr>\n");
-	printf ("<td>HA Disk: </td>\n");
-	printf ("<td><input type=\"checkbox\" name=\"ha_disk\"></td>\n"); 
-	printf ("</tr>\n");
-
 	printf("</table>\n");
 	cgi_print_div_end();
 

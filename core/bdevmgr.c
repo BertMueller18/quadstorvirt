@@ -25,7 +25,6 @@
 #include "log_group.h"
 #include "rcache.h"
 #include "qs_lib.h"
-#include "node_ha.h"
 #include "cluster.h"
 #include "bdevgroup.h"
 
@@ -100,7 +99,6 @@ bdev_list_remove(struct bdevint *bint)
 	sx_xunlock(bint->group->alloc_lock);
 	bint_list[bint->bid] = NULL;
 	bint_clear_group_master(bint);
-	bdev_group_clear_ha_bint(bint);
 	bdev_removed();
 }
 
@@ -2040,10 +2038,8 @@ bint_finalize(struct bdevint *bint)
 	bint->sync_task = NULL;
 	bint->load_task = NULL;
 	bint->free_task = NULL;
- 	if (!node_in_standby()) {
-		bint_sync(bint, 0);
-		bint_group_sync(bint);
-	}
+	bint_sync(bint, 0);
+	bint_group_sync(bint);
 free:
 	atomic_dec(&bint->group->bdevs);
 	bint_free(bint, 0);
@@ -2054,14 +2050,6 @@ bdev_finalize(void)
 {
 	struct bdevint *bint;
 	int i;
-
-#if 0
-	if (!atomic_read(&log_error) && master_bint && !node_in_standby()) {
-		master_bint->log_write = 1;
-		atomic_set_bit(BINT_IO_PENDING, &master_bint->flags);
-		bint_sync(master_bint);
-	}
-#endif
 
 	sx_xlock(gchain_lock);
 	for (i = 0; i < TL_MAX_DISKS; i++) {
@@ -2080,7 +2068,7 @@ bdev_finalize(void)
 			bdev_log_list_remove(bint, 1);
 		}
 
-		if (!node_in_standby() && bint_is_group_master(bint) && !bint->in_log_replay) {
+		if (bint_is_group_master(bint) && !bint->in_log_replay) {
 			bint->log_write = 1;
 			atomic_set_bit(BINT_IO_PENDING, &bint->flags);
 			bint_sync(bint, 0);
@@ -2100,7 +2088,7 @@ bdev_remove(struct bdev_info *binfo)
 	int retval, i;
 
 	dump_ddtable_global();
-	if (!atomic_read(&kern_inited) || node_in_standby())
+	if (!atomic_read(&kern_inited))
 		return -1;
 
 	sx_xlock(gchain_lock);
@@ -2200,7 +2188,7 @@ bdev_wc_config(struct bdev_info *binfo)
 	struct bdevint *bint;
 	int retval;
 
-	if (!atomic_read(&kern_inited) || node_in_standby())
+	if (!atomic_read(&kern_inited))
 		return -1;
 
 	bint = bdev_find(binfo->bid);
@@ -2224,7 +2212,7 @@ bdev_unmap_config(struct bdev_info *binfo)
 	struct bdevint *bint;
 	int retval, unmap;
 
-	if (!atomic_read(&kern_inited) || node_in_standby())
+	if (!atomic_read(&kern_inited))
 		return -1;
 
 	bint = bdev_find(binfo->bid);
@@ -2252,61 +2240,6 @@ bdev_unmap_config(struct bdev_info *binfo)
 	atomic_set_bit(BINT_IO_PENDING, &bint->flags);
 	retval = bint_sync(bint, 1);
 	return retval;
-}
-
-int
-bdev_ha_config(struct bdev_info *binfo)
-{
-	struct bdevint *bint;
-	struct bdevint *ha_bint;
-	int retval;
-
-	if (!atomic_read(&kern_inited) || node_in_standby())
-		return -1;
-
-	bint = bdev_find(binfo->bid);
-	if (!bint) {
-		debug_warn("Cannot find bdev at id %u\n", binfo->bid);
-		return -1;
-	}
-
-	ha_bint = bdev_group_get_ha_bint();
-	if (binfo->ha_disk && ha_bint) {
-		debug_warn("HA disk already set to %u from pool %s\n", ha_bint->bid, ha_bint->group->name);
-		return -1;
-	}
-
-	if (!binfo->ha_disk && !bint_is_ha_disk(bint)) {
-		debug_check(ha_bint);
-		return 0;
-	}
-
-	if (binfo->ha_disk)
-		atomic_set_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags);
-	else
-		atomic_clear_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags);
-
-	atomic_set_bit(BINT_IO_PENDING, &bint->flags);
-	retval = bint_sync(bint, 1);
-	if (unlikely(retval != 0))
-		goto err;
-
-	if (bint_is_ha_disk(bint)) {
-		bdev_group_set_ha_bint(bint);
-		ha_init_config();
-		node_controller_ha_init();
-	}
-	else {
-		bdev_group_clear_ha_bint(bint);
-	}
-
-	return 0;
-err:
-	if (binfo->ha_disk)
-		atomic_set_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags);
-	else
-		atomic_clear_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags);
-	return -1;
 }
 
 int
@@ -3369,9 +3302,6 @@ int bint_load_thread(void *data)
 		if (kernel_thread_check(&bint->flags, BINT_LOAD_EXIT))
 			break;
 
-		if (node_in_standby())
-			continue;
-
 		if (atomic_read(&bint->free_list_indexes) > FREE_LIST_INDEXES_CACHED) {
 			if (atomic_test_bit(BINT_IN_SYNC_DATA, &bint->flags)) {
 				atomic_clear_bit(BINT_IN_SYNC_DATA, &bint->flags);
@@ -3483,13 +3413,6 @@ int bint_sync_thread(void *data)
 
 		wait_on_chan_timeout(bint->sync_wait, kernel_thread_check(&bint->flags, BINT_SYNC_EXIT), 10000);
 
-		if (node_in_standby()) {
-			if (kernel_thread_check(&bint->flags, BINT_SYNC_EXIT))
-				break;
-			atomic_clear_bit(BINT_IO_PENDING, &bint->flags);
-			continue;
-		}
-
 		bint_sync(bint, 0);
 		bint_group_sync(bint);
 		if (kernel_thread_check(&bint->flags, BINT_SYNC_EXIT))
@@ -3552,7 +3475,6 @@ static int bint_create_thread(void *data)
 {
 	struct bdevint *bint = (struct bdevint *)(data);
 	struct bdevint *master_bint;
-	struct bdevint *ha_bint;
 	int retval;
 
 	sx_xlock(gchain_lock);
@@ -3623,18 +3545,6 @@ static int bint_create_thread(void *data)
 
 	if (atomic_test_bit(GROUP_FLAGS_MASTER, &bint->group_flags)) {
 		bint_set_group_master(bint);
-	}
-
-	if (atomic_test_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags)) {
-		ha_bint = bdev_group_get_ha_bint();
-		if (!ha_bint) {
-			bdev_group_set_ha_bint(bint);
-			ha_init_config();
-			node_controller_ha_init();
-		}
-		else {
-			atomic_clear_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags);
-		}
 	}
 
 	atomic_set_bit(BINT_LOAD_START, &bint->flags);
@@ -3871,7 +3781,6 @@ static int
 bint_gen_properties(struct bdevint *bint, struct bdev_info *binfo)
 {
 	struct bdevgroup *group = bint->group;
-	struct bdevint *ha_bint;
 	int ddmaster = 0;
 	int log_disk = 0;
 	int group_master = 0;
@@ -3945,11 +3854,6 @@ bint_gen_properties(struct bdevint *bint, struct bdev_info *binfo)
 		if (group->logdata)
 			atomic_set_bit(GROUP_FLAGS_LOGDATA, &bint->group_flags);
 	}
-
-	ha_bint = bdev_group_get_ha_bint();
-
-	if ((!ha_bint && binfo->ha_disk) || (!ha_bint && !group->group_id))
-		atomic_set_bit(GROUP_FLAGS_HA_DISK, &bint->group_flags);
 
 	return 0;
 }
@@ -4049,9 +3953,6 @@ bdev_add_new(struct bdev_info *binfo)
 			if (!bint->log_write)
 				bint->in_log_replay = 1;
 		}
-
-		if (bint_is_ha_disk(bint))
-			bdev_group_set_ha_bint(bint);
 
 		if (atomic_test_bit(GROUP_FLAGS_UNMAP_ENABLED, &bint->group_flags)) {
 			unmap = bdev_unmap_support(bint->b_dev);

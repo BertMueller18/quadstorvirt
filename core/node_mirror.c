@@ -28,13 +28,26 @@
 #include "node_sock.h"
 #include "vdevdefs.h"
 #include "ddthread.h"
-#include "node_sync.h"
-#include "node_ha.h"
 #include "bdevgroup.h"
 #include "node_mirror.h"
 #include "sense.h"
 
 static int tdisk_mirror_startup(struct tdisk *tdisk, int recovery);
+
+static struct node_msg *
+node_sync_msg_alloc(int dxfer_len, int msg_cmd)
+{
+	struct node_msg *msg;
+	struct raw_node_msg *raw;
+
+	msg = node_msg_alloc(dxfer_len);
+	raw = msg->raw;
+	bzero(raw, sizeof(*raw) + dxfer_len);
+	raw->dxfer_len = dxfer_len;
+	raw->msg_cmd = msg_cmd;
+	raw->msg_id = node_transaction_id();
+	return msg;
+}
 
 static void
 tdisk_mirror_incr(struct tdisk *tdisk)
@@ -2903,10 +2916,8 @@ node_mirror_update_vdisk_properties(struct node_sock *sock, struct raw_node_msg 
 		}
 	}
 
-	if (need_update) {
-		node_tdisk_update_send(tdisk);
+	if (need_update)
 		cbs_update_device(tdisk);
-	}
 	tdisk_start_resize_thread(tdisk);
 send:
 	tdisk_put(tdisk);

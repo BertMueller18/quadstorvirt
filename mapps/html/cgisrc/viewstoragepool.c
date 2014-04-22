@@ -249,11 +249,6 @@ skip_rename:
 					strcat(status, " ");
 				strcat(status, "L");
 			}
-			if (disk->ha_disk) {
-				if (strlen(status) > 0)
-					strcat(status, " ");
-				strcat(status, "H");
-			}
 			if (disk->enable_comp) {
 				if (strlen(status) > 0)
 					strcat(status, " ");
