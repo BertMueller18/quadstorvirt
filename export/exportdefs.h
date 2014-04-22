@@ -201,8 +201,6 @@ struct qs_kern_cbs {
 	int (*node_status)(struct node_config *);
 	int (*bdev_add_new)(struct bdev_info *);
 	int (*bdev_remove)(struct bdev_info *);
-	int (*bdev_add_stub)(struct bdev_info *);
-	int (*bdev_remove_stub)(struct bdev_info *);
 	int (*bdev_get_info)(struct bdev_info *);
 	int (*bdev_ha_config)(struct bdev_info *);
 	int (*bdev_unmap_config)(struct bdev_info *);
@@ -223,9 +221,6 @@ struct qs_kern_cbs {
 	int (*target_vdisk_stats)(struct tdisk_info *, unsigned long);
 	int (*target_vdisk_reset_stats)(struct tdisk_info *, unsigned long);
 	int (*target_new_vdisk)(struct tdisk_info *, unsigned long);
-	int (*target_new_vdisk_stub)(struct tdisk_info *, unsigned long);
-	int (*target_delete_vdisk_stub)(struct tdisk_info *, unsigned long);
-	int (*target_disable_vdisk_stub)(struct tdisk_info *, unsigned long);
 	int (*target_resize_vdisk)(struct tdisk_info *, unsigned long);
 	int (*target_rename_vdisk)(struct tdisk_info *, unsigned long);
 	int (*target_set_role)(struct tdisk_info *, unsigned long);

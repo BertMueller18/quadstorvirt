@@ -1091,8 +1091,6 @@ kern_interface_init(struct qs_kern_cbs *kern_cbs)
 	kern_cbs->mdaemon_set_info = mdaemon_set_info;
 	kern_cbs->bdev_add_new = bdev_add_new;
 	kern_cbs->bdev_remove = bdev_remove;
-	kern_cbs->bdev_add_stub = bdev_add_stub;
-	kern_cbs->bdev_remove_stub = bdev_remove_stub;
 	kern_cbs->bdev_get_info = bdev_get_info;
 	kern_cbs->bdev_ha_config = bdev_ha_config;
 	kern_cbs->bdev_unmap_config = bdev_unmap_config;
@@ -1113,9 +1111,6 @@ kern_interface_init(struct qs_kern_cbs *kern_cbs)
 	kern_cbs->target_vdisk_stats = target_disk_stats;
 	kern_cbs->target_vdisk_reset_stats = target_disk_reset_stats;
 	kern_cbs->target_new_vdisk = target_new_disk;
-	kern_cbs->target_new_vdisk_stub = target_new_disk_stub;
-	kern_cbs->target_delete_vdisk_stub = target_delete_disk_stub;
-	kern_cbs->target_disable_vdisk_stub = target_disable_disk_stub;
 	kern_cbs->target_resize_vdisk = target_resize_disk;
 	kern_cbs->target_rename_vdisk = target_rename_disk;
 	kern_cbs->target_set_role = target_set_role;

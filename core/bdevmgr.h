@@ -481,8 +481,6 @@ enum {
 
 int bdev_add_new(struct bdev_info *binfo);
 int bdev_remove(struct bdev_info *binfo);
-int bdev_add_stub(struct bdev_info *binfo);
-int bdev_remove_stub(struct bdev_info *binfo);
 int bdev_get_info(struct bdev_info *binfo);
 int bdev_ha_config(struct bdev_info *binfo);
 int bdev_unmap_config(struct bdev_info *binfo);
