@@ -90,8 +90,6 @@ enum {
 	NODE_MSG_GROUP_REMOVED,
 };
 
-int node_controller_init(void);
-int node_controller_init_pre(void);
 int node_recv_init(void);
 void tl_server_node_config(struct tl_comm *comm, struct tl_msg *msg);
 int tl_server_start_mirror(struct tl_comm *comm, struct tl_msg *msg);
@@ -103,15 +101,6 @@ void vhba_add_device(int vhba_id);
 struct tl_blkdevinfo * blkdev_new(char *devname);
 int gen_rid(char *rid);
 void vhba_remove_device(struct tdisk_info *info);
-void node_controller_bdev_added(struct tl_blkdevinfo *blkdev);
-void node_controller_bdev_removed(struct tl_blkdevinfo *blkdev);
-void node_controller_group_added(struct group_info *info);
-void node_controller_group_removed(struct group_info *info);
-void node_controller_vdisk_added(struct tdisk_info *info);
-void node_controller_vdisk_attached(struct tdisk_info *info);
-void node_controller_vdisk_modified(struct tdisk_info *info);
-void node_controller_vdisk_removed(struct tdisk_info *info);
-void node_controller_vdisk_disable(struct tdisk_info *info);
 
 void node_resp_data(struct tl_comm *comm, struct tl_msg *msg);
 void node_resp_success(struct tl_comm *comm, struct tl_msg *msg);

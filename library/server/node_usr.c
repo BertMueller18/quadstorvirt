@@ -471,7 +471,6 @@ node_usr_attach_interface(struct usr_msg *msg, char *name)
 		DEBUG_ERR_SERVER("Unable to create iscsi target for disk target %s host id %u", info->name, info->iscsi_tid);
 	info->online = 1;
 	strcpy(name, info->name);
-	node_controller_vdisk_attached(info);
 }
 
 static void

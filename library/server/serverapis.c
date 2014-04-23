@@ -287,6 +287,45 @@ err:
 }
 
 void
+node_resp_data(struct tl_comm *comm, struct tl_msg *msg)
+{
+	msg->msg_resp = MSG_RESP_OK;
+	tl_msg_send_message_timeout(comm, msg);
+	tl_msg_free_message(msg);
+	tl_msg_close_connection(comm);
+}
+
+void
+node_resp_success(struct tl_comm *comm, struct tl_msg *msg)
+{
+	tl_msg_free_data(msg);
+	msg->msg_resp = MSG_RESP_OK;
+	tl_msg_send_message_timeout(comm, msg);
+	tl_msg_free_message(msg);
+	tl_msg_close_connection(comm);
+}
+
+void
+node_resp_status(struct tl_comm *comm, struct tl_msg *msg, int status)
+{
+	tl_msg_free_data(msg);
+	msg->msg_resp = status;
+	tl_msg_send_message_timeout(comm, msg);
+	tl_msg_free_message(msg);
+	tl_msg_close_connection(comm);
+}
+
+void
+node_resp_error(struct tl_comm *comm, struct tl_msg *msg)
+{
+	tl_msg_free_data(msg);
+	msg->msg_resp = MSG_RESP_ERROR;
+	tl_msg_send_message_timeout(comm, msg);
+	tl_msg_free_message(msg);
+	tl_msg_close_connection(comm);
+}
+
+void
 tl_server_msg_invalid(struct tl_comm *comm, struct tl_msg *msg)
 {
 	int msg_len = strlen(MSG_STR_INVALID_MSG);
@@ -1332,7 +1371,6 @@ add_target(struct group_info *group_info, char *targetname, uint64_t targetsize,
 	}
 
 	tdisk_add(group_info, tdisk_info);
-	node_controller_vdisk_added(tdisk_info);
 	if (attach) {
 		tdisk_info->attach = attach;
 		attach_tdisk(tdisk_info);
@@ -2637,7 +2675,6 @@ tl_server_add_group(struct tl_comm *comm, struct tl_msg *msg)
 		goto senderr;
 	}
 
-	node_controller_group_added(group_info);
 	group_list[group_info->group_id] = group_info;
 
 	tl_server_msg_success(comm, msg);
@@ -2756,7 +2793,6 @@ tl_server_modify_tdisk(struct tl_comm *comm, struct tl_msg *msg)
 	tdisk_info->enable_verify = verify;
 	tdisk_info->force_inline = force_inline;
 	tdisk_info->enable_deduplication = dedupe;
-	node_controller_vdisk_modified(tdisk_info);
 
 	sql_update_tdisk(tdisk_info);
 	tl_server_msg_success(comm, msg);
@@ -2815,7 +2851,6 @@ tl_server_delete_group(struct tl_comm *comm, struct tl_msg *msg)
 	}
 
 	group_list[group_info->group_id] = NULL;
-	node_controller_group_removed(group_info);
 	free(group_info);
 	tl_server_msg_success(comm, msg);
 	return 0;
@@ -2854,7 +2889,6 @@ tl_server_delete_tdisk(struct tl_comm *comm, struct tl_msg *msg)
 		snprintf(errmsg, sizeof(errmsg), "Cannot delete fc rules for vdisk %s\n", tdisk_info->name);
 		goto senderr;
 	}
-	node_controller_vdisk_disable(tdisk_info);
 
 	conn = pgsql_begin();
 	if (!conn) {
@@ -2892,7 +2926,6 @@ tl_server_delete_tdisk(struct tl_comm *comm, struct tl_msg *msg)
 		goto senderr;
 	}
 
-	node_controller_vdisk_removed(tdisk_info);
 	tl_server_msg_success(comm, msg);
 	return 0;
 errrsp:
@@ -3123,8 +3156,6 @@ tl_server_delete_disk(struct tl_comm *comm, struct tl_msg *msg)
 		goto senderr;
 	}
 
-	node_controller_bdev_removed(blkdev);
-
 	DEBUG_BUG_ON(!blkdev->bid);
 	retval = sql_delete_blkdev(blkdev);
 	if (retval != 0) {
@@ -3243,7 +3274,6 @@ tl_server_add_disk(struct tl_comm *comm, struct tl_msg *msg)
 	memcpy(binfo.product, blkdev->disk.info.product, sizeof(binfo.product));
 	memcpy(binfo.serialnumber, blkdev->disk.info.serialnumber, sizeof(binfo.serialnumber));
 	binfo.serial_len = blkdev->disk.info.serial_len;
-	node_controller_bdev_added(blkdev);
 	binfo.isnew = 1;
 	binfo.enable_comp = comp;
 	binfo.log_disk = log_disk;
@@ -3284,7 +3314,6 @@ tl_server_add_disk(struct tl_comm *comm, struct tl_msg *msg)
 
 err:
 	pgsql_rollback(conn);
-	node_controller_bdev_removed(blkdev);
 	free(blkdev);
 senderr:
 	tl_server_msg_failure2(comm, msg, errmsg);
@@ -3527,7 +3556,6 @@ tl_server_set_vdisk_serialnumber(struct tl_comm *comm, struct tl_msg *msg)
 	}
 
 	memcpy(tdisk_info->serialnumber, serialnumber, 32);
-	node_controller_vdisk_modified(tdisk_info);
 
 	tl_server_msg_success(comm, msg);
 	return 0;
@@ -3590,7 +3618,6 @@ tl_server_set_vdiskconf(struct tl_comm *comm, struct tl_msg *msg)
 	tdisk_info->enable_verify = newconf.enable_verify;
 	tdisk_info->enable_deduplication = newconf.enable_deduplication;
 	tdisk_info->threshold = newconf.threshold;
-	node_controller_vdisk_modified(tdisk_info);
 
 	sql_update_tdisk(tdisk_info);
 	tl_server_msg_success(comm, msg);
@@ -3895,10 +3922,6 @@ tl_server_load(void)
 	tl_common_scan_physdisk();
 	__tl_server_load();
 
-	retval = node_controller_init_pre();
-	if (retval != 0)
-		exit(1); 
-
 	retval = tl_ioctl_void(TLTARGIOCLOADDONE);
 	if (retval != 0)
 		log_error = 1;
@@ -3932,10 +3955,6 @@ tl_server_load_conf(struct tl_comm *comm, struct tl_msg *msg)
 
 	attach_tdisks();
 	done_init = 1;
-
-	retval = node_controller_init();
-	if (retval != 0)
-		exit(EXIT_FAILURE); 
 
 	wait_for_attach();
 	ietadm_qload_done();

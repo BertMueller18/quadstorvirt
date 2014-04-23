@@ -21,7 +21,7 @@ endif
 
 SRCS = serverapis.c
 
-OBJS = serverapis.o ietadm.o physlib.o sqlint.o diskinfo.o node_controller.o node_recv.o node_send.o node_usr.o fcconfig.o log.o pgsql.o md5c.o
+OBJS = serverapis.o ietadm.o physlib.o sqlint.o diskinfo.o node_recv.o node_send.o node_usr.o fcconfig.o log.o pgsql.o md5c.o
 
 all: libtlsrv.so
 
