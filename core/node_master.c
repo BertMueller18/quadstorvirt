@@ -30,55 +30,10 @@
 
 struct node_comm *root;
 
-wait_chan_t *master_wait;
-wait_chan_t *master_cleanup_wait;
-static kproc_t *master_task;
-static kproc_t *master_cleanup_task;
 extern kproc_t *recv_task;
 extern wait_chan_t *recv_wait;
 extern int recv_flags;
-int master_flags;
-static int master_cleanup_flags;
-static struct queue_list master_queue_list = TAILQ_HEAD_INITIALIZER(master_queue_list);
-static mtx_t *master_queue_lock;
-struct node_config master_config;
-atomic_t node_role;
-atomic_t master_pending_writes;
 static int node_master_write_unaligned(struct tdisk *tdisk, struct qsio_scsiio *ctio, struct write_list *wlist, struct node_msg *msg);
-
-int
-node_get_role(void)
-{
-	return (atomic_read(&node_role));
-}
-
-void
-node_set_role(int role)
-{
-	atomic_set(&node_role, role);
-}
-
-void
-node_master_pending_writes_incr(void)
-{
-	atomic_inc(&master_pending_writes);
-}
-
-void
-node_master_pending_writes_decr(void)
-{
-	debug_check(!atomic_read(&master_pending_writes));
-	if (atomic_dec_and_test(&master_pending_writes)) {
-		if (master_wait)
-			chan_wakeup_nointr(master_wait);
-	}
-}
-
-void
-node_master_pending_writes_wait(void)
-{
-	wait_on_chan(master_wait, !atomic_read(&master_pending_writes));
-}
 
 static inline void
 scsi_cmd_spec_read(struct scsi_cmd_spec *spec, struct qsio_scsiio *ctio)
@@ -718,8 +673,6 @@ node_master_read_pre(struct tdisk *tdisk, struct qsio_scsiio *ctio)
 		msg->raw->mirror_status = 0;
 	}
 
-	node_master_pending_writes_incr();
-
 	if (tdisk->lba_shift != LBA_SHIFT) {
 		uint64_t lba_diff;
 
@@ -735,7 +688,6 @@ node_master_read_pre(struct tdisk *tdisk, struct qsio_scsiio *ctio)
 	if (unlikely(!pglist)) {
 		ctio_construct_sense(ctio, SSD_CURRENT_ERROR, SSD_KEY_HARDWARE_ERROR, 0, INTERNAL_TARGET_FAILURE_ASC, INTERNAL_TARGET_FAILURE_ASCQ);
 		tdisk_remove_lba_write(tdisk, &wlist->lba_write);
-		node_master_pending_writes_decr();
 		write_list_free(wlist);
 		device_send_ccb(ctio);
 		return;
@@ -876,7 +828,6 @@ node_master_read_pre(struct tdisk *tdisk, struct qsio_scsiio *ctio)
 
 	if (!need_io) {
 		pgdata_free_amaps(pglist, pglist_cnt);
-		node_master_pending_writes_decr();
 		node_master_end_ctio(ctio);
 		node_msg_free(msg);
 	}
@@ -889,7 +840,6 @@ err:
 	msg->wlist = NULL;
 
 	pgdata_free_amaps(pglist, pglist_cnt);
-	node_master_pending_writes_decr();
 	pglist_free(pglist, pglist_cnt);
 	ctio_construct_sense(ctio, SSD_CURRENT_ERROR, SSD_KEY_HARDWARE_ERROR, 0, INTERNAL_TARGET_FAILURE_ASC, INTERNAL_TARGET_FAILURE_ASCQ);
 	device_send_ccb(ctio);
@@ -904,7 +854,6 @@ err2:
 	pgdata_free_amaps(pglist, pglist_cnt);
 	if (need_io)
 		node_cmd_hash_remove(msg->sock->comm->node_hash, msg, raw->xchg_id);
-	node_master_pending_writes_decr();
 	node_master_end_ctio(ctio);
 	node_msg_free(msg);
 }
@@ -914,14 +863,12 @@ node_master_read_error(struct tdisk *tdisk, struct write_list *wlist, struct qsi
 {
 	tdisk_remove_lba_write(tdisk, &wlist->lba_write);
 	pgdata_free_amaps((struct pgdata **)ctio->data_ptr, ctio->pglist_cnt);
-	node_master_pending_writes_decr();
 }
 
 void
 node_master_write_error(struct tdisk *tdisk, struct write_list *wlist, struct qsio_scsiio *ctio)
 {
 	tdisk_write_error(tdisk, ctio, wlist, ctio_in_sync(ctio));
-	node_master_pending_writes_decr();
 }
 
 static int
@@ -972,7 +919,6 @@ node_master_write_post(struct tdisk *tdisk, struct write_list *wlist, struct qsi
 	device_send_ccb(ctio);
 
 	write_list_free(wlist);
-	node_master_pending_writes_decr();
 	return 0;
 }
 
@@ -1059,7 +1005,6 @@ __node_master_write_pre(struct tdisk *tdisk, struct qsio_scsiio *ctio, int cw)
 	}
 
 	pglist_cnt_incr(ctio->pglist_cnt);
-	node_master_pending_writes_incr();
 
 	cmd_spec = scsi_cmd_spec_ptr(raw);
 	remote = !atomic_test_bit(WLIST_UNALIGNED_WRITE, &wlist->flags) && !ctio_in_xcopy(ctio);
@@ -1318,46 +1263,6 @@ node_master_write_cmd(struct node_sock *sock, struct raw_node_msg *raw, struct q
 		node_master_proc_cmd(tdisk, ctio);
 }
 
-static void
-node_master_read_io_done(struct node_sock *sock, struct raw_node_msg *raw, struct queue_list *queue_list, mtx_t *queue_lock)
-{
-	struct node_msg *msg;
-	struct qsio_scsiio *ctio;
-	struct tdisk *tdisk;
-	struct write_list *wlist;
-	int retval;
-
-	msg = node_cmd_lookup(sock->comm->node_hash, raw->xchg_id, queue_list, queue_lock);
-	if (unlikely(!msg)) {
-		debug_warn("Missing exchange cmd %llx\n", (unsigned long long)raw->xchg_id);
-		node_error_resp_msg(sock, raw, NODE_STATUS_INVALID_MSG);
-		return;
-	}
-
-	debug_check(msg->sock != sock);
-	ctio = msg->ctio;
-	wlist = msg->wlist;
-	tdisk = msg->tdisk;
-	msg->raw->msg_cmd = raw->msg_cmd;
-
-	debug_check(!ctio);
-	debug_check(!wlist);
-	debug_check(!tdisk);
-
-	msg->raw->cmd_status = NODE_CMD_DONE;
-	msg->raw->pg_count = 0;
-	msg->raw->dxfer_len = 0;
-	retval = node_send_msg(sock, msg, msg->raw->xchg_id, 1);
-	if (unlikely(retval != 0))
-		goto err;
-	return;
-err:
-	node_master_read_error(tdisk, wlist, ctio);
-	node_master_end_ctio(ctio);
-	node_msg_cleanup(msg);
-	return;
-}
-
 void
 node_master_read_done(struct node_sock *sock, struct raw_node_msg *raw, struct queue_list *queue_list, mtx_t *queue_lock)
 {
@@ -1384,7 +1289,6 @@ node_master_read_done(struct node_sock *sock, struct raw_node_msg *raw, struct q
 
 	tdisk_remove_lba_write(tdisk, &wlist->lba_write);
 	pgdata_free_amaps((struct pgdata **)ctio->data_ptr, ctio->pglist_cnt);
-	node_master_pending_writes_decr();
 	ctio_free_data(ctio);
 	node_master_end_ctio(ctio);
 	node_msg_cleanup(msg);
@@ -1556,7 +1460,6 @@ err:
 	tdisk_remove_alloc_lba_write(&wlist->lba_alloc, tdisk->lba_read_wait, &tdisk->lba_read_list);
 	tdisk_remove_lba_write(tdisk, &wlist->lba_write);
 	pgdata_free_amaps((struct pgdata **)ctio->data_ptr, ctio->pglist_cnt);
-	node_master_pending_writes_decr();
 	ctio_free_data(ctio);
 	ctio_construct_sense(ctio, SSD_CURRENT_ERROR, SSD_KEY_HARDWARE_ERROR, 0, INTERNAL_TARGET_FAILURE_ASC, INTERNAL_TARGET_FAILURE_ASCQ);
 	device_send_ccb(ctio);
@@ -1568,7 +1471,6 @@ err2:
 	tdisk_remove_alloc_lba_write(&wlist->lba_alloc, tdisk->lba_read_wait, &tdisk->lba_read_list);
 	tdisk_remove_lba_write(tdisk, &wlist->lba_write);
 	pgdata_free_amaps((struct pgdata **)ctio->data_ptr, ctio->pglist_cnt);
-	node_master_pending_writes_decr();
 	node_master_end_ctio(ctio);
 	node_msg_cleanup(msg);
 }
@@ -2287,166 +2189,6 @@ uint32_t master_verify_data_ticks;
 uint32_t master_comp_done_ticks;
 uint32_t master_cmd_generic_ticks;
 
-static void
-node_recv_cmd(struct node_sock *sock, struct raw_node_msg *raw)
-{
-#ifdef ENABLE_STATS
-	uint32_t start_ticks;
-#endif
-
-	switch (raw->msg_cmd) {
-	case NODE_MSG_REGISTER:
-		GLOB_TSTART(start_ticks);
-		node_master_register(sock, raw, 1, &master_flags, master_wait, &master_queue_list, master_queue_lock, 1);
-		GLOB_TEND(master_register_ticks, start_ticks);
-		break;
-	case NODE_MSG_UNREGISTER:
-		GLOB_TSTART(start_ticks);
-		node_master_register(sock, raw, 0, &master_flags, master_wait, &master_queue_list, master_queue_lock, 1);
-		GLOB_TEND(master_unregister_ticks, start_ticks);
-		break;
-	case NODE_MSG_READ_CMD:
-		GLOB_TSTART(start_ticks);
-		node_master_read_cmd(sock, raw, &master_queue_list, master_queue_lock, 0);
-		GLOB_TEND(master_read_cmd_ticks, start_ticks);
-		break;
-	case NODE_MSG_WRITE_CMD:
-		GLOB_TSTART(start_ticks);
-		node_master_write_cmd(sock, raw, &master_queue_list, master_queue_lock, 0, 0);
-		GLOB_TEND(master_write_cmd_ticks, start_ticks);
-		break;
-	case NODE_MSG_VERIFY_DATA:
-		GLOB_TSTART(start_ticks);
-		node_master_verify_data(sock, raw, &master_queue_list, master_queue_lock);
-		GLOB_TEND(master_verify_data_ticks, start_ticks);
-		break;
-	case NODE_MSG_WRITE_COMP_DONE:
-		GLOB_TSTART(start_ticks);
-		node_master_write_comp_done(sock, raw, &master_queue_list, master_queue_lock);
-		GLOB_TEND(master_comp_done_ticks, start_ticks);
-		break;
-#if 0
-	case NODE_MSG_WRITE_IO_DONE:
-		GLOB_TSTART(start_ticks);
-		node_master_write_io_done(sock, raw);
-		GLOB_TEND(master_write_io_done_ticks, start_ticks);
-		break;
-#endif
-	case NODE_MSG_WRITE_DONE:
-		GLOB_TSTART(start_ticks);
-		node_master_write_done(sock, raw, &master_queue_list, master_queue_lock);
-		GLOB_TEND(master_write_done_ticks, start_ticks);
-		break;
-	case NODE_MSG_WRITE_DATA:
-		GLOB_TSTART(start_ticks);
-		node_master_write_data(sock, raw, &master_queue_list, master_queue_lock);
-		GLOB_TEND(master_write_data_ticks, start_ticks);
-		break;
-	case NODE_MSG_READ_IO_DONE:
-		GLOB_TSTART(start_ticks);
-		node_master_read_io_done(sock, raw, &master_queue_list, master_queue_lock);
-		GLOB_TEND(master_read_io_done_ticks, start_ticks);
-		break;
-	case NODE_MSG_READ_DATA:
-		GLOB_TSTART(start_ticks);
-		node_master_read_data(sock, raw, &master_queue_list, master_queue_lock);
-		GLOB_TEND(master_read_data_ticks, start_ticks);
-		break;
-	case NODE_MSG_READ_DONE:
-		GLOB_TSTART(start_ticks);
-		node_master_read_done(sock, raw, &master_queue_list, master_queue_lock);
-		GLOB_TEND(master_read_done_ticks, start_ticks);
-		break;
-	case NODE_MSG_GENERIC_CMD:
-		GLOB_TSTART(start_ticks);
-		node_master_cmd_generic(sock, raw, 0);
-		GLOB_TEND(master_cmd_generic_ticks, start_ticks);
-		break;
-	case NODE_MSG_PERSISTENT_RESERVE_OUT_CMD:
-		node_master_cmd_persistent_reserve_out(sock, raw, 0);
-		break;
-	default:
-		debug_warn("Unknown node msg %d received\n", raw->msg_cmd);
-		node_error_resp_msg(sock, raw, NODE_STATUS_INVALID_MSG);
-		break;
-	}
-}
-
-static int
-node_master_recv(struct node_sock *sock)
-{
-	int retval;
-	struct raw_node_msg raw;
-
-	while (1) {
-		retval = node_sock_read(sock, &raw, sizeof(raw));
-		if (retval != 0) {
-			atomic_set_bit(NODE_COMM_CLEANUP, &sock->comm->flags);
-			atomic_set_bit(MASTER_CLEANUP, &master_flags);
-			chan_wakeup_nointr(master_wait);
-			return -1;
-		}
-
-		if (unlikely(!node_msg_csum_valid(&raw))) {
-			debug_warn("Received msg with invalid csum\n");
-			atomic_set_bit(NODE_COMM_CLEANUP, &sock->comm->flags);
-			atomic_set_bit(MASTER_CLEANUP, &master_flags);
-			chan_wakeup_nointr(master_wait);
-			node_sock_read_error(sock);
-			return -1;
-		}
-
-		atomic_inc(&write_requests);
-		node_recv_cmd(sock, &raw);
-		atomic_dec(&write_requests);
-		if (sock_state_error(sock)) {
-			atomic_set_bit(NODE_COMM_CLEANUP, &sock->comm->flags);
-			atomic_set_bit(MASTER_CLEANUP, &master_flags);
-			chan_wakeup_nointr(master_wait);
-			return -1;
-		}
-	}
-	return 0;
-}
-
-static int
-node_master_accept(struct node_sock *recv_sock)
-{
-	struct node_sock *sock;
-	struct node_comm *comm;
-	uint32_t ipaddr;
-	int error = 0, retval;
-
-	while (1) {
-		sock = __node_sock_alloc(NULL, node_master_recv); 
-		sock->lsock = sock_accept(recv_sock->lsock, sock, &error, &ipaddr);
-		if (!sock->lsock || !atomic_read(&kern_inited)) {
-			node_sock_free(sock, 1);
-			if (error) {
-				return -1;
-			}
-			return 0;
-		}
-
-		comm = node_comm_locate(node_master_hash, ipaddr, root);
-		sock->comm = comm;
-		node_comm_lock(comm);
-		retval = kernel_thread_create(node_sock_recv_thr, sock, sock->task, "ndsockma");
-		if (unlikely(retval != 0)) {
-			node_sock_free(sock, 1);
-			node_comm_unlock(comm);
-			return -1;
-		}
-		TAILQ_INSERT_TAIL(&comm->sock_list, sock, s_list);
-		node_comm_unlock(comm);
-		if (sock->state == SOCK_STATE_CONNECTED) {
-			atomic_set_bit(NODE_SOCK_DATA, &sock->flags);
-			chan_wakeup(sock->sock_wait);
-		}
-	}
-	return 0;
-}
-
 void
 node_master_proc_cmd(void *disk, void *iop)
 {
@@ -2664,54 +2406,6 @@ node_root_comm_free(struct node_comm *root_comm, struct queue_list *queue_list, 
 }
 
 void
-node_cleanups_wait(void)
-{
-#if 0
-	if (master_task)
-		wait_on_chan(master_wait, !atomic_test_bit(MASTER_IN_CLEANUP, &master_flags));
-
-	if (recv_task)
-		wait_on_chan(recv_wait, !atomic_test_bit(MASTER_IN_CLEANUP, &recv_flags));
-#endif
-}
-
-void
-node_master_exit(void)
-{
-	if (root) {
-		node_root_comm_free(root, &master_queue_list, master_queue_lock);
-		node_comm_put(root);
-		root = NULL;
-	}
-
-	if (master_cleanup_task) {
-		kernel_thread_stop(master_cleanup_task, &master_cleanup_flags, master_cleanup_wait, MASTER_EXIT);
-		master_cleanup_task = NULL;
-	}
-
-	if (master_task) {
-		wait_on_chan(master_wait, !atomic_test_bit(MASTER_IN_CLEANUP, &master_flags));
-		kernel_thread_stop(master_task, &master_flags, master_wait, MASTER_EXIT);
-		master_task = NULL;
-	}
-
-	if (master_wait) {
-		wait_chan_free(master_wait);
-		master_wait = NULL;
-	}
-
-	if (master_cleanup_wait) {
-		wait_chan_free(master_cleanup_wait);
-		master_cleanup_wait = NULL;
-	}
-
-	if (master_queue_lock) {
-		mtx_free(master_queue_lock);
-		master_queue_lock = NULL;
-	}
-}
-
-void
 node_master_cleanup(struct node_comm *root_comm, struct queue_list *queue_list, mtx_t *queue_lock)
 {
 	struct node_comm *comm, *next, *prev = NULL;
@@ -2770,114 +2464,4 @@ node_master_cleanup(struct node_comm *root_comm, struct queue_list *queue_list, 
 			atomic_clear_bit(NODE_COMM_LINGER, &comm->flags);
 		node_comm_put(comm);
 	}
-}
-
-void
-master_queue_wait_for_empty(void)
-{
-	while (!TAILQ_EMPTY(&master_queue_list)) {
-		node_check_timedout_msgs(node_master_hash, &master_queue_list, master_queue_lock, controller_recv_timeout);
-		pause("psg", 200);
-	}
-}
-
-#ifdef FREEBSD 
-static void node_cleanup_thr(void *data)
-#else
-static int node_cleanup_thr(void *data)
-#endif
-{
-	for(;;) {
-
-		wait_on_chan_timeout(master_cleanup_wait, kernel_thread_check(&master_cleanup_flags, MASTER_EXIT), 5000);
-		node_check_timedout_msgs(node_master_hash, &master_queue_list, master_queue_lock, controller_recv_timeout);
-		if (kernel_thread_check(&master_cleanup_flags, MASTER_EXIT))
-			break;
-	}
-#ifdef FREEBSD 
-	kproc_exit(0);
-#else
-	return 0;
-#endif
-}
-
-#ifdef FREEBSD 
-static void node_master_thr(void *data)
-#else
-static int node_master_thr(void *data)
-#endif
-{
-	struct node_config *node_config = data;
-	int retval;
-
-	root = node_comm_alloc(NULL, node_config->controller_ipaddr, node_config->node_ipaddr);
-	retval = node_sock_bind(root, node_master_accept, CONTROLLER_DATA_PORT, "ndsockmr");
-	if (unlikely(retval != 0)) {
-		debug_warn("node master/controller init failed\n");
-		node_comm_put(root);
-		root = NULL;
-		atomic_set_bit(MASTER_BIND_ERROR, &master_flags);
-	}
-
-	atomic_set_bit(MASTER_INITED, &master_flags);
-	chan_wakeup(master_wait);
-
-	while(!kernel_thread_check(&master_flags, MASTER_EXIT)) {
-		wait_on_chan_timeout(master_wait, kernel_thread_check(&master_flags, MASTER_EXIT) || atomic_test_bit(MASTER_CLEANUP, &master_flags), 5000);
-		if (unlikely(kernel_thread_check(&master_flags, MASTER_EXIT)))
-			break;
-		if (atomic_test_bit(MASTER_CLEANUP, &master_flags)) {
-			atomic_set_bit(MASTER_IN_CLEANUP, &master_flags);
-			atomic_clear_bit(MASTER_CLEANUP, &master_flags);
-			if (unlikely(kernel_thread_check(&master_flags, MASTER_EXIT))) {
-				atomic_clear_bit(MASTER_IN_CLEANUP, &master_flags);
-				chan_wakeup(master_wait);
-				break;
-			}
-			node_master_cleanup(root, &master_queue_list, master_queue_lock);
-			atomic_clear_bit(MASTER_IN_CLEANUP, &master_flags);
-			chan_wakeup(master_wait);
-		}
-#if 0
-		node_check_timedout_msgs(node_master_hash, &master_queue_list, master_queue_lock, controller_recv_timeout);
-#endif
-	}
-#ifdef FREEBSD 
-	kproc_exit(0);
-#else
-	return 0;
-#endif
-}
-
-int
-node_master_init(struct node_config *node_config)
-{
-	int retval;
-
-	SET_NODE_TIMEOUT(node_config, controller_recv_timeout, CONTROLLER_RECV_TIMEOUT_MIN, CONTROLLER_RECV_TIMEOUT_MAX);
-
-	if (master_wait)
-		return 0;
-
-	memcpy(&master_config, node_config, sizeof(master_config));
-
-	master_wait = wait_chan_alloc("node master wait");
-	master_cleanup_wait = wait_chan_alloc("node master cleanup wait");
-	master_queue_lock = mtx_alloc("master queue lock");
-	TAILQ_INIT(&master_queue_list);
-
-	retval = kernel_thread_create(node_cleanup_thr, NULL, master_cleanup_task, "mstclnthr");
-	if (unlikely(retval != 0)) {
-		node_master_exit();
-		return -1;
-	}
-
-	retval = kernel_thread_create(node_master_thr, node_config, master_task, "mstthr");
-	if (unlikely(retval != 0)) {
-		node_master_exit();
-		return -1;
-	}
-
-	wait_on_chan_interruptible(master_wait, atomic_test_bit(MASTER_INITED, &master_flags));
-	return 0;
 }

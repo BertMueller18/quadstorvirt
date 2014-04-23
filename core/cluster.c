@@ -816,12 +816,6 @@ node_hash_free(struct node_msg_list *node_hash, char *name)
 void
 node_exit(void)
 {
-	if (node_type_controller())
-		node_master_exit();
-	else if (node_type_master()) {
-		node_master_exit();
-	}
-
 	if (!node_transaction_lock)
 		return;
 

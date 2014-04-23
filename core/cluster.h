@@ -308,14 +308,11 @@ void node_comm_put(struct node_comm *comm);
 void node_comm_free(struct node_comm *comm);
 void node_comm_cleanup(struct node_comm *comm, struct sock_list *sock_list);
 void node_master_cleanup(struct node_comm *root_comm, struct queue_list *queue_list, mtx_t *queue_lock);
-void node_cleanups_wait(void);
 void node_master_register(struct node_sock *sock, struct raw_node_msg *raw, int node_register, int *flags, wait_chan_t *wait, struct queue_list *queue_list, mtx_t *queue_lock, int notify);
 #define node_comm_get(cmm)	(atomic_inc(&cmm->refs))
 struct node_sock * node_sock_alloc(struct node_comm *comm, int (*sock_callback) (struct node_sock *), sock_t *lsock, char *name);
 void node_sock_free(struct node_sock *sock, int linger);
 struct node_sock * __node_sock_alloc(struct node_comm *comm, int (*sock_callback) (struct node_sock *));
-int node_get_role(void);
-void node_set_role(int role);
 
 struct vdisk_update_spec {
 	uint8_t enable_compression;
@@ -533,16 +530,12 @@ do {								\
 int node_config(struct node_config *node_config);
 int node_status(struct node_config *node_config);
 uint64_t node_get_tprt(void);
-int node_client_init(struct node_config *node_config);
 int node_usr_init(void);
 void node_exit(void);
 void node_init(void);
 void node_client_exit(void);
 void node_usr_exit(void);
-int node_master_init(struct node_config *node_config);
-void node_master_exit(void);
 void node_master_proc_cmd(void *disk, void *iop);
-void node_client_proc_cmd(void *disk, void *iop);
 struct node_sock * node_comm_get_sock(struct node_comm *comm, int wait);
 int node_cmd_hash_remove(struct node_msg_list *node_hash, struct node_msg *msg, uint32_t id);
 void node_msg_hash_cancel(struct node_msg_list *node_hash);
@@ -642,9 +635,6 @@ void ctio_pglist_cleanup(struct qsio_scsiio *ctio);
 struct index_sync_list;
 struct amap_sync_list;
 void node_master_sync_wait(void);
-void node_master_pending_writes_incr(void);
-void node_master_pending_writes_decr(void);
-void node_master_pending_writes_wait(void);
 void node_root_comm_free(struct node_comm *root_comm, struct queue_list *queue_list, mtx_t *queue_lock);
 int node_cmd_write_done(struct qsio_scsiio *ctio, struct node_comm *comm, struct node_sock *sock, struct node_msg *msg, int timeout);
 

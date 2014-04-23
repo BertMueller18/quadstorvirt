@@ -749,9 +749,6 @@ __kern_exit(void)
 		tdisk_mirror_exit(tdisk);
 	}
 
-	debug_print("node cleanups wait\n");
-	node_cleanups_wait();
-
 	for (i = 0; i < TL_MAX_DEVICES; i++) {
 		struct tdisk *tdisk = tdisks[i];
 
