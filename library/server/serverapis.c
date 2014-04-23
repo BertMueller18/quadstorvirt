@@ -3113,6 +3113,9 @@ tl_server_delete_disk(struct tl_comm *comm, struct tl_msg *msg)
 		goto senderr;
 	}
 
+	if (blkdev->disk.initialized <= 0)
+		goto skip_group_checks;
+
 	TAILQ_FOREACH(tmp, &blkdev->group->bdev_list, g_entry) {
 		count++;
 	}
@@ -3143,6 +3146,7 @@ tl_server_delete_disk(struct tl_comm *comm, struct tl_msg *msg)
 		}
 	}
 
+skip_group_checks:
 	memset(&binfo, 0, sizeof(struct bdev_info));
 	binfo.bid = blkdev->bid;
 	binfo.ddmaster = blkdev->ddmaster;
