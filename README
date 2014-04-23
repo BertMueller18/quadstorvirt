@@ -1,0 +1,126 @@
+QUADStor storage virtualization installation guide
+
+Prerequistes
+------------
+
+On FreeBSD 8.x/9.x:
+
+pkg_add -r sudo apache22 gmake 
+Additionally the kernel source /usr/sys/sys needs to be present
+
+On RHEL/CentOS 5.x/6.x:
+
+yum install httpd gcc perl kernel-devel sg3_utils
+
+On SLES 11 SP1/SP2:
+
+zypper install apache2 gcc perl kernel-default-devel sg3_utils
+
+On Debian 6.x/7.x:
+
+apt-get install uuid-runtime
+apt-get install build-essential
+apt-get install sg3-utils
+apt-get install apache2
+apt-get install psmisc
+apt-get install firmware-qlogic (for FC access)
+apt-get install linux-headers-{uname}
+where {uname} can be got from the command 'uname -r'
+
+If you have installed any of the release packages before, then you most likely have all the prerequistes installed.
+
+Installation
+------------
+
+Login to the machine where quadstor needs to be installed. Download the source using git
+
+git clone --branch opensource https://github.com/quadstor/quadstorvirt.git quadstor
+
+You could also download the source from https://github.com/quadstor/quadstorvirt (Download ZIP button on the right)
+ 
+cd quadstor (or the directory which gets unpacked)
+
+On RHEL/CentOS 6.x (x86_64):
+./installworld rhel6
+
+On Debian 7.x/Wheezy:
+./installworld debian7
+
+On Debian 6.x/Squeeze:
+./installworld debian6
+
+On SLES 11 SP2:
+./installworld sles11sp2
+
+On FreeBSD 9.x
+./installworld bsd9
+
+On FreeBSD 8.x
+./installworld bsd
+
+For other distributions, choose the method closest from the above. For example for FC19 ./installworld rhel6 should work
+
+Post Installation
+-----------------
+One Linux
+
+By default quadstor services are automatically started during system startup.If you wish to start the service manually then run the following command
+
+sh# /sbin/chkconfig --del quadstor
+
+To start the service manually
+
+sh# /etc/rc.d/init.d/quadstor start (On RHEL/CentOS)
+sh# /etc/init.d/quadstor start (On SLES, Debian)
+
+To stop the service
+
+sh# /etc/rc.d/init.d/quadstor stop (On RHEL/CentOS)
+sh# /etc/init.d/quadstor stop (On SLES, Debian)
+
+If the system already has other iscsi target software services running, ensure that they are not started on system startup and while starting the quadstor service
+NOTE: After an install and if a reboot was not initiated you will need to manually start the quadstor service. However if after the install the system was rebooted quadstor service would have started automatically
+SELinux Considerations
+
+While the package installation and quadstor start script takes care of on SELinux enabled environment the following need to be done if you have SELinux enabled
+
+/usr/sbin/setsebool -P httpd_enable_cgi 1
+/usr/sbin/semanage permissive -a httpd_t
+
+On RHEL/CentOS 6.x you need to install policycoreutils-python package (yum install policycoreutils-python) to install semanage utility
+Fibre Channel driver installation
+
+The necessary steps required for fibre channel driver installation are taken care of. Unless the kernel version needs to be change no additional steps are required. On a kernel upgrade or after booting to a new kernel version, ensure that installworld is runagain
+NOTE: A reboot is required to load the new FC driver if LUNs are to be accessed via the FC interface
+
+On FreeBSD:
+
+Add the following to /etc/rc.conf
+
+quadstor_enable="YES" 
+
+The above change needs to be done If you wish to start the quadstor service automatically on system boot. If you wish to start the service manually run /etc/rc.d/quadstor onestart and to stop the service /etc/rc.d/quadstor onestop
+Fibre Channel Installation
+
+Add the following to /boot/loader.conf in the same order as below
+
+ispfw_load="YES"
+ispmod_load="YES"
+remove isp_load="YES" if present
+
+The ispmod driver used is a modified version of the FreeBSD isp driver but all device hints suggested in the manpage of isp are supported. Also the current behavior of the driver is to enable both target mode and initiator mode. Initiator mode is required, if for access to disks or tape is over fiber channel connected to QLogic cards. If however you are accessing disks or tape without the need for FC connected to QLogic card(s) then it is suggested to disable initiator mode. This can be change by adding a device hint in either the /boot/loader.conf or /boot/device.hints.
+
+For example:
+hint.ispmod.0.role="1" would enable target mode only. Note that ispmod.0 specifies the first QLogic adapter, ispmod.1 the second etc.
+role can be "1" [target mode only], "2" [ initiator mode only], "3" [both target and initiator mode]
+A reboot is required to load the new FC driver if LUNs are to be accessed via the FC interface
+
+Uninstallation
+--------------
+
+Go back to the location where the sources were built and run
+
+./uninstallworld
+
+uninstallworld removes most of the installed files except for custom configurationf files like /quadstor/etc/quadstor.conf and the postgresql database data files under /quadstor/pgsql/data. These will have to be manually removed if you are clearing out an installation.
+/quadstor/pgdata contains the configuration database of the software. This data is maintained even after an uninstall of the software and is required for upgrades. If this data were to manually removed all previous configuration such as configured storage, VDisks is lost. Refer to http://www.quadstor.com/support/131-recovering-from-a-lost-or-damaged-database.html to recover from a lost or damage database
