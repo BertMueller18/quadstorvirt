@@ -26,6 +26,11 @@
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_tcq.h>
 
+static atomic64_t pages_alloced;
+static atomic64_t pages_freed;
+static atomic64_t pages_refed;
+static atomic64_t pages_unrefed;
+
 /* Corelib interface definitions */
 
 /* Socket related stuff */
@@ -428,12 +433,15 @@ vm_pg_alloc(allocflags_t aflags)
 	int flags = GFP_NOIO | (aflags ? __GFP_ZERO : 0);
 
 	pp = alloc_page(flags);
+	if (pp)
+		atomic64_inc(&pages_alloced);
 	return pp;
 }
 
 static void
 vm_pg_free(pagestruct_t *pp)
 {
+	atomic64_inc(&pages_freed);
 	__free_page(pp);
 }
 
@@ -446,12 +454,14 @@ vm_pg_address(pagestruct_t *pp)
 static void
 vm_pg_ref(pagestruct_t *pp)
 {
+	atomic64_inc(&pages_refed);
 	get_page(pp);
 }
 
 static void
 vm_pg_unref(pagestruct_t *pp)
 {
+	atomic64_inc(&pages_unrefed);
 	put_page(pp);
 }
 
@@ -1031,6 +1041,7 @@ bio_free_pages(bio_t *bio)
 	int j;
 
 	bio_for_each_segment(bvec, bio, j) {
+		atomic64_inc(&pages_unrefed);
 		put_page(bvec->bv_page);
 	}
 }
@@ -1041,6 +1052,7 @@ bio_free_page(bio_t *bio)
 	struct bio_vec *bvec;
 
 	bvec = bio_iovec_idx(bio, 0);
+	atomic64_inc(&pages_unrefed);
 	put_page(bvec->bv_page);
 }
 
@@ -1994,6 +2006,11 @@ coremod_exit(void)
 	sx_xunlock(&ioctl_lock);
 	exit_caches();
 	unregister_chrdev(dev_major, TL_DEV_NAME);
+	DEBUG_INFO_NEW("Pages alloced %llu\n", (unsigned long long)atomic64_read(&pages_alloced));
+	DEBUG_INFO_NEW("Pages freed %llu\n", (unsigned long long)atomic64_read(&pages_freed));
+	DEBUG_INFO_NEW("Pages refed %llu\n", (unsigned long long)atomic64_read(&pages_refed));
+	DEBUG_INFO_NEW("Pages unrefed %llu\n", (unsigned long long)atomic64_read(&pages_unrefed));
+	DEBUG_INFO_NEW("Pages diff %llu\n", (unsigned long long)((atomic64_read(&pages_refed) + atomic64_read(&pages_alloced) - (atomic64_read(&pages_freed) + atomic64_read(&pages_unrefed)))));
 }
 
 MODULE_AUTHOR("Shivaram Upadhyayula, QUADStor Systems");
