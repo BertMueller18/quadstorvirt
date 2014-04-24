@@ -29,7 +29,7 @@
 
 struct ddtable_stats ddtable_stats;
 struct ddtable_global ddtable_global;
-static void ddtable_free(struct ddtable *ddtable);
+static void ddtable_free(struct ddtable *ddtable, int error);
 static int ddlookup_check_read_io(struct ddtable *ddtable, struct ddtable_ddlookup_node *ddlookup, int start_io);
 struct locate_spec;
 static inline void ddtable_clear_invalid_entries(struct ddtable *ddtable, struct ddtable_ddlookup_node *parent, struct pgdata *pgdata, struct locate_spec *locate_spec, int *insert_idx);
@@ -261,7 +261,7 @@ node_ddlookup(struct ddtable_node *node, uint64_t b_start)
 }
 
 static void
-ddtable_ddlookup_free_list(struct ddtable *ddtable, struct ddlookup_node_list *lhead)
+ddtable_ddlookup_free_list(struct ddtable *ddtable, struct ddlookup_node_list *lhead, int error)
 {
 	struct ddtable_ddlookup_node *ddlookup;
 	struct ddtable_node *node;
@@ -269,7 +269,7 @@ ddtable_ddlookup_free_list(struct ddtable *ddtable, struct ddlookup_node_list *l
 	while ((ddlookup = SLIST_FIRST(lhead)) != NULL) {
 		SLIST_REMOVE_HEAD(lhead, p_list);
 		wait_on_chan(ddlookup->ddlookup_wait, !atomic_test_bit_short(DDLOOKUP_META_DATA_READ_DIRTY, &ddlookup->flags) && !atomic_test_bit_short(DDLOOKUP_META_DATA_DIRTY, &ddlookup->flags));
-		debug_check(atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags));
+		debug_check(!error && atomic_test_bit_short(DDLOOKUP_META_IO_PENDING, &ddlookup->flags));
 		node = node_get(ddtable, ddlookup->b_start);
 		LIST_REMOVE_INIT(ddlookup, n_list);
 		node_unlock(node);
@@ -373,6 +373,7 @@ ddtable_ddlookup_node_alloc(allocflags_t flags)
 
 	ddlookup->metadata = vm_pg_alloc(flags);
 	if (unlikely(!ddlookup->metadata)) {
+		debug_warn("Page allocation failure\n");
 		ddtable_ddlookup_node_put(ddlookup);
 		return NULL;
 	}
@@ -734,7 +735,7 @@ ddtable_init(struct ddtable *ddtable, struct bdevint *bint)
 	ddtable->node_groups = zalloc(sizeof(struct node_group *) * num_groups, M_DDTABLE, Q_NOWAIT);
 	if (unlikely(!ddtable->node_groups)) {
 		debug_warn("Memory allocation failure\n");
-		ddtable_free(ddtable);
+		ddtable_free(ddtable, 1);
 		return -1;
 	}
 
@@ -744,7 +745,7 @@ ddtable_init(struct ddtable *ddtable, struct bdevint *bint)
 		node_group = __uma_alloc(node_group_cache, Q_NOWAIT);
 		if (unlikely(!node_group)) {
 			debug_warn("Slab allocation failure\n");
-			ddtable_free(ddtable);
+			ddtable_free(ddtable, 1);
 			return -1;
 		}
 
@@ -752,7 +753,7 @@ ddtable_init(struct ddtable *ddtable, struct bdevint *bint)
 		if (unlikely(!node_group->ddlookup_lists)) {
 			debug_warn("Slab allocation failure\n");
 			uma_zfree(node_group_cache, node_group);
-			ddtable_free(ddtable);
+			ddtable_free(ddtable, 1);
 			return -1;
 		}
 
@@ -761,7 +762,7 @@ ddtable_init(struct ddtable *ddtable, struct bdevint *bint)
 			debug_warn("Slab allocation failure\n");
 			uma_zfree(fourk_cache, node_group->ddlookup_lists);
 			uma_zfree(node_group_cache, node_group);
-			ddtable_free(ddtable);
+			ddtable_free(ddtable, 1);
 			return -1;
 		}
 		ddtable->node_groups[i] = node_group;
@@ -843,7 +844,7 @@ err:
 }
 
 static void
-ddtable_free(struct ddtable *ddtable)
+ddtable_free(struct ddtable *ddtable, int error)
 {
 	struct node_group *node_group;
 	struct ddtable_node *node;
@@ -864,7 +865,7 @@ ddtable_free(struct ddtable *ddtable)
 			ddlookup_list = node_group->ddlookup_lists[j];
 			if (!ddlookup_list)
 				continue;
-			ddtable_ddlookup_free_list(ddtable, &ddlookup_list->lhead);
+			ddtable_ddlookup_free_list(ddtable, &ddlookup_list->lhead, error);
 			sx_free(ddlookup_list->insert_lock);
 			mtx_free(ddlookup_list->lhead_lock);
 			uma_zfree(ddlookup_list_cache, ddlookup_list);
@@ -1065,20 +1066,20 @@ ddtable_load(struct ddtable *ddtable, struct bdevint *table_bint)
 
 	retval = ddtable_init(ddtable, table_bint);
 	if (unlikely(retval != 0)) {
-		ddtable_free(ddtable);
+		ddtable_free(ddtable, 1);
 		return -1;
 	}
 
 	page = vm_pg_alloc(0);
 	if (unlikely(!page)) {
-		ddtable_free(ddtable);
+		ddtable_free(ddtable, 1);
 		return -1;
 	}
 
 	retval = qs_lib_bio_lba(table_bint, table_b_start, page, QS_IO_READ, TYPE_DDTABLE);
 	if (unlikely(retval != 0)) {
 		vm_pg_free(page);
-		ddtable_free(ddtable);
+		ddtable_free(ddtable, 1);
 		return -1;
 	}
 
@@ -1148,7 +1149,7 @@ err:
 	if (ddtable->sync_task)
 		kernel_thread_stop(ddtable->sync_task, &ddtable->flags, ddtable->sync_wait, DDTABLE_SYNC_EXIT);
 
-	ddtable_free(ddtable);
+	ddtable_free(ddtable, 1);
 	vm_pg_free(page);
 	return -1;
 }
@@ -1173,13 +1174,13 @@ ddtable_create(struct ddtable *ddtable, struct bdevint *table_bint)
 
 	retval = ddtable_init(ddtable, table_bint);
 	if (unlikely(retval != 0)) {
-		ddtable_free(ddtable);
+		ddtable_free(ddtable, 1);
 		return -1;
 	}
 
 	page = vm_pg_alloc(0);
 	if (unlikely(!page)) {
-		ddtable_free(ddtable);
+		ddtable_free(ddtable, 1);
 		return -1;
 	}
 
@@ -1268,10 +1269,11 @@ ddtable_create(struct ddtable *ddtable, struct bdevint *table_bint)
 	ddtable_global_update_peer_count(ddtable);
 	return 0;
 err:
+	index_info_list_free(&index_info_list);
 	if (ddtable->sync_task)
 		kernel_thread_stop(ddtable->sync_task, &ddtable->flags, ddtable->sync_wait, DDTABLE_SYNC_EXIT);
 
-	ddtable_free(ddtable);
+	ddtable_free(ddtable, 1);
 	vm_pg_free(page);
 	return -1;
 }
@@ -1376,7 +1378,7 @@ ddtable_exit(struct ddtable *ddtable)
 		if (!ddlookup_list)
 			continue;
 
-		ddtable_ddlookup_free_list(ddtable, &ddlookup_list->lhead);
+		ddtable_ddlookup_free_list(ddtable, &ddlookup_list->lhead, 0);
 	}
 
 	for (i = 0; i < ddtable->max_roots; i++) {
@@ -1389,7 +1391,7 @@ ddtable_exit(struct ddtable *ddtable)
 	debug_check(!atomic_read(&ddtable_global.cur_ddtables));
 	atomic_dec(&ddtable_global.cur_ddtables);
 	ddtable_global_update_peer_count(ddtable);
-	ddtable_free(ddtable);
+	ddtable_free(ddtable, 0);
 
 	PRINT_STAT("async_load", async_load);
 	PRINT_STAT("sync_load", sync_load);

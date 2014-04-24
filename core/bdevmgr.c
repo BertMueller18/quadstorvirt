@@ -2144,14 +2144,14 @@ bdev_remove(struct bdev_info *binfo)
 		return -1;
 	}
 
-	if (bint->log_disk) {
+	if (bint->initialized == 1 && bint->log_disk) {
 		retval = bdev_log_remove(bint, 0);
 		if (unlikely(retval != 0)) {
 			sx_xunlock(gchain_lock);
 			return -1;
 		}
 		bdev_log_list_remove(bint, 1);
-		if (bint->log_disk && bint != master_bint) {
+		if (master_bint && bint->log_disk && bint != master_bint) {
 			bint_lock(master_bint);
 			master_bint->log_disks--;
 			atomic_set_bit(BINT_IO_PENDING, &master_bint->flags);
@@ -2166,6 +2166,9 @@ bdev_remove(struct bdev_info *binfo)
 			}
 		}
 	}
+
+	if (bint->initialized == 1)
+		atomic64_sub(atomic64_read(&bint->free), &bint->group->free);
 
 	atomic_clear_bit(BINT_SYNC_ENABLED, &bint->flags);
 	while (atomic_read(&bint->post_writes))
@@ -3597,6 +3600,7 @@ exit:
 			bdev_log_remove(bint, 1);
 			bdev_log_list_remove(bint, 0);
 		}
+		atomic64_sub(atomic64_read(&bint->free), &bint->group->free);
 	}
 	sx_xunlock(gchain_lock);
 	bint->create_task = NULL;
