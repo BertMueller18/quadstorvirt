@@ -66,24 +66,6 @@ kernel_thread_check(int *flags, int bit)
 #endif
 
 #ifdef FREEBSD
-static inline int
-kernel_thread_check1(wait_chan_t *chan, int *flags, int bit)
-{
-	int ret;
-
-	mtx_lock(&chan->chan_lock);
-	if (test_bit(bit, flags))
-		ret = 1;
-	else
-		ret = 0;
-	mtx_unlock(&chan->chan_lock);
-	return ret;
-}
-#else
-#define kernel_thread_check1(a,b,c)	(kthread_should_stop())
-#endif
-
-#ifdef FREEBSD
 static inline int 
 kernel_thread_stop(kproc_t *task, int *flags, wait_chan_t *chan, int bit)
 {

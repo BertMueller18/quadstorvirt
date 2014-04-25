@@ -126,14 +126,6 @@ do {								\
 	wake_up_all(&(chn));					\
 } while (0)
 
-#define chan_wakeup_one_condition(chn, condition)			\
-do {								\
-	condition;						\
-	wake_up(&(chn));					\
-} while (0)
-
-
-
 typedef struct page pagestruct_t;
 typedef struct bio bio_t;
 
@@ -161,19 +153,12 @@ typedef struct sys_sock {
 #define spin_lock_initt(x,y)	spin_lock_init(x)
 #define mtx_lock_initt(x,y)	spin_lock_init(x)
 
-enum {
-	MT_DEF,
-	MT_SPIN,
-};
-
 #define sx_init(mt,nm) mutex_init((mt))
 #define sx_xlock mutex_lock
 #define sx_try_xlock mutex_trylock
-#define sx_slock mutex_lock
 #define sx_xlocked mutex_is_locked
 #define sx_xlock_interruptible mutex_lock_interruptible
 #define sx_xunlock mutex_unlock
-#define sx_sunlock mutex_unlock
 #define SSD_ERRCODE                     0x7F
 #define         SSD_CURRENT_ERROR       0x70
 #define         SSD_DEFERRED_ERROR      0x71
@@ -200,7 +185,6 @@ enum {
 typedef struct kmem_cache slab_cache_t;
 typedef struct kmem_cache uma_t;
 typedef struct completion completion_t;
-#define init_completiont(x,y)	init_completion(x)
 
 #define printf printk
 #define slab_cache_create		kmem_cache_create
@@ -284,9 +268,6 @@ typedef uint8_t *	vm_offset_t;
 
 #define bcopy(s,d,l)	memcpy(d,s,l)
 #define bzero(p,l)	memset(p,0,l)
-
-#define PRIu64	"llu"
-#define PRIx64	"llx"
 
 /*
  * Status Byte

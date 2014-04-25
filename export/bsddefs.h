@@ -224,24 +224,10 @@ do {								\
 	mtx_unlock(&chn->chan_lock);				\
 } while (0)
 
-#define __chan_wakeup_one_condition(chn, condition)		\
-do {								\
-	mtx_lock(&chn->chan_lock);				\
-	condition;						\
-	cv_signal(&chn->chan_cond);				\
-	mtx_unlock(&chn->chan_lock);				\
-} while (0)
-
 #define chan_wakeup_condition(chan, condition)			\
 do {								\
 	wait_chan_t *chanptr = &(chan);				\
 	__chan_wakeup_condition(chanptr, condition);		\
-} while (0)
-
-#define chan_wakeup_one_condition(chan, condition)		\
-do {								\
-	wait_chan_t *chanptr = &(chan);				\
-	__chan_wakeup_one_condition(chanptr, condition);	\
 } while (0)
 
 static inline void
