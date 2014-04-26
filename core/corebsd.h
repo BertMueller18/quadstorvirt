@@ -281,8 +281,8 @@ chan_wakeup(wait_chan_t *chan)
 	mtx_unlock(&chan->chan_lock);
 }
 
-#define chan_wakeup_nointr		chan_wakeup
-#define chan_wakeup_one_nointr		chan_wakeup_one
+#define chan_wakeup_nointr(chn)		chan_wakeup(chn)
+#define chan_wakeup_one_nointr(chn)	chan_wakeup_one(chn)
 
 static inline void
 wait_complete(wait_compl_t *chan)

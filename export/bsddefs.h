@@ -155,6 +155,7 @@ struct wait_chan {
 };
 
 typedef struct wait_chan wait_chan_t;
+typedef struct wait_chan wait_compl_t;
 
 static inline void
 wait_chan_init(wait_chan_t *chan, const char *name)
