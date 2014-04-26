@@ -99,7 +99,6 @@ typedef void iodev_t;
 typedef void g_geom_t;
 typedef void g_consumer_t;
 typedef void kproc_t;
-typedef void cv_t;
 typedef void bio_t;
 
 #define NULL    	(0L)
@@ -248,6 +247,8 @@ typedef void bio_t;
 
 void *zalloc(size_t size, int type, int flags);
 void free(void *ptr, int mtype);
+typedef void wait_chan_t;
+typedef void wait_compl_t;
 
 #include <exportdefs.h>
 /* kcbs defs */
@@ -270,9 +271,6 @@ extern struct qs_kern_cbs kcbs;
 #define vm_pg_address	(*kcbs.vm_pg_address)
 #define vm_pg_ref	(*kcbs.vm_pg_ref)
 #define vm_pg_unref	(*kcbs.vm_pg_unref)
-#if 0
-#define zalloc		(*kcbs.zalloc)
-#endif
 #define malloc		(*kcbs.malloc)
 #define __uma_zalloc	(*kcbs.uma_zalloc)
 #define __uma_alloc	(*kcbs.uma_alloc)
@@ -295,11 +293,26 @@ extern struct qs_kern_cbs kcbs;
 #define sx_xlocked 	(*kcbs.shx_xlocked)
 #define bdev_start 	(*kcbs.bdev_start)
 #define bdev_marker 	(*kcbs.bdev_marker)
-#define cv_alloc	(*kcbs.cv_alloc)
-#define cv_wait		(*kcbs.cv_wait)
-#define cv_timedwait	(*kcbs.cv_timedwait)
-#define cv_wait_sig	(*kcbs.cv_wait_sig)
-#define cv_free		(*kcbs.cv_free)
+#define wait_chan_alloc		(*kcbs.wait_chan_alloc)
+#define wait_chan_free		(*kcbs.wait_chan_free)
+#define wait_completion_alloc	(*kcbs.wait_compl_alloc)
+#define wait_completion_free	(*kcbs.wait_compl_free)
+#define init_wait_completion	(*kcbs.init_wait_compl)
+#define set_wait_complete	(*kcbs.set_wait_compl)
+#define wait_complete		(*kcbs.wait_complete)
+#define wait_complete_all	(*kcbs.wait_complete_all)
+#define wait_for_done		(*kcbs.wait_for_done)
+#define wait_for_done_timeout(cmpl, timo)	(*kcbs.wait_for_done_timeout)(cmpl, msecs_to_ticks(timo))
+#define chan_wakeup		(*kcbs.chan_wakeup)
+#define chan_wakeup_unlocked	(*kcbs.chan_wakeup_unlocked)
+#define chan_wakeup_nointr	(*kcbs.chan_wakeup_nointr)
+#define chan_wakeup_one		(*kcbs.chan_wakeup_one)
+#define chan_wakeup_one_unlocked	(*kcbs.chan_wakeup_one_unlocked)
+#define chan_wakeup_one_nointr		(*kcbs.chan_wakeup_one_nointr)
+#define chan_lock	(*kcbs.chan_lock)
+#define chan_unlock	(*kcbs.chan_unlock)
+#define chan_lock_intr	(*kcbs.chan_lock_intr)
+#define chan_unlock_intr	(*kcbs.chan_unlock_intr)
 #define pause		(*kcbs.pause)
 #define printf		(*kcbs.printf)
 #define kernel_thread_check	(*kcbs.kernel_thread_check)
@@ -391,185 +404,61 @@ extern uma_t *chan_cache;
 extern uma_t *compl_cache;
 
 #define BIO_SECTOR(block,shift)	((block << (shift - 9)))
-/* wait defs */
-typedef struct wait_chan {
-	mtx_t *chan_lock;
-	cv_t *chan_cond;
-} wait_chan_t;
-
-typedef struct wait_compl {
-	mtx_t *chan_lock;
-	cv_t *chan_cond;
-	int done;
-} wait_compl_t;
-
-
-static inline void
-wait_chan_init(wait_chan_t *chan, const char *name)
-{
-	chan->chan_lock = mtx_alloc(name);
-	chan->chan_cond = cv_alloc(name);
-}
-
-static inline wait_chan_t *
-wait_chan_alloc(char *name)
-{
-	wait_chan_t *chan;
-
-	chan = __uma_alloc(chan_cache, Q_WAITOK);
-	wait_chan_init(chan, name);
-	return chan;
-}
-
-static inline void
-wait_chan_free(wait_chan_t *chan)
-{
-	mtx_free(chan->chan_lock);
-	cv_free(chan->chan_cond);
-	uma_zfree(chan_cache, chan);
-}
-
-static inline void
-wait_compl_init(wait_compl_t *chan, const char *name)
-{
-	chan->chan_lock = mtx_alloc(name);
-	chan->chan_cond = cv_alloc(name);
-	chan->done = 0;
-}
-
-static inline wait_compl_t *
-wait_completion_alloc(char *name)
-{
-	wait_compl_t *chan;
-
-	chan = __uma_alloc(compl_cache, Q_WAITOK);
-	wait_compl_init(chan, name);
-	return chan;
-}
-
-static inline void
-init_wait_completion(wait_compl_t *chan)
-{
-	mtx_lock(chan->chan_lock);
-	chan->done = 0;
-	mtx_unlock(chan->chan_lock);
-}
-
-static inline void
-wait_completion_free(wait_compl_t *chan)
-{
-	mtx_free(chan->chan_lock);
-	cv_free(chan->chan_cond);
-	uma_zfree(compl_cache, chan);
-}
 
 #define wait_on_chan_locked(chn, condition)			\
 do {								\
 	while (!(condition)) {					\
-		cv_wait_sig(chn->chan_cond, chn->chan_lock, 0);	\
+		(*kcbs.wait_on_chan_sig)(chn, 0);		\
 	}							\
 } while (0)
 
 #define wait_on_chan(chn, condition)				\
 do {								\
 	unsigned long flags;					\
-	mtx_lock_intr(chn->chan_lock, &flags);			\
+	chan_lock_intr(chn, &flags);				\
 	while (!(condition)) {					\
-		cv_wait(chn->chan_cond, chn->chan_lock, &flags, 0);\
+		(*kcbs.wait_on_chan)(chn, &flags, 0);		\
 	}							\
-	mtx_unlock_intr(chn->chan_lock, &flags);		\
+	chan_unlock_intr(chn, &flags);				\
 } while (0)
 
 #define wait_on_chan_intr(chn, condition)				\
 do {								\
 	unsigned long flags;					\
-	mtx_lock_intr(chn->chan_lock, &flags);			\
+	chan_lock_intr(chn, &flags);				\
 	while (!(condition)) {					\
-		cv_wait(chn->chan_cond, chn->chan_lock, &flags, 1);\
+		(*kcbs.wait_on_chan)(chn, &flags, 1);		\
 	}							\
-	mtx_unlock_intr(chn->chan_lock, &flags);		\
+	chan_unlock_intr(chn, &flags);				\
 } while (0)
 
 #define wait_on_chan_timeout(chn, condition, timo)		\
 ({								\
 	unsigned long flags;					\
 	long __ret = msecs_to_ticks(timo);			\
-	mtx_lock_intr(chn->chan_lock, &flags);			\
+	chan_lock_intr(chn, &flags);				\
 	while (!(condition)) {					\
-		__ret = cv_timedwait(chn->chan_cond, chn->chan_lock, &flags, __ret);\
+		__ret = (*kcbs.wait_on_chan_timeout)(chn, &flags, __ret); \
 		if (!__ret)					\
 			break;					\
 	}							\
-	mtx_unlock_intr(chn->chan_lock, &flags);		\
+	chan_unlock_intr(chn, &flags);				\
 	__ret;							\
 })
 
 #define wait_on_chan_interruptible(chn, condition)		\
 do {								\
-	mtx_lock(chn->chan_lock);				\
+	chan_lock(chn);						\
 	while (!(condition)) {					\
-		cv_wait_sig(chn->chan_cond, chn->chan_lock, 1);	\
+		(*kcbs.wait_on_chan_sig)(chn, 1);			\
 	}							\
-	mtx_unlock(chn->chan_lock);				\
+	chan_unlock(chn);					\
 } while (0)
 
 #define wait_on_chan_uncond(chan)				\
 do {								\
-	cv_wait_sig(chan->chan_cond, chan->chan_lock, 0);	\
+	(*kcbs.wait_on_chan_sig)(chan, 0);			\
 } while (0)
-
-static inline void
-chan_wakeup_one_unlocked(wait_chan_t *chan)
-{
-	(*kcbs.wakeup_one_unlocked)(chan->chan_cond);
-}
-
-static inline void
-chan_wakeup_one(wait_chan_t *chan)
-{
-	(*kcbs.wakeup_one)(chan->chan_cond, chan->chan_lock);
-}
-
-static inline void
-chan_wakeup_one_nointr(wait_chan_t *chan)
-{
-	(*kcbs.wakeup_one_nointr)(chan->chan_cond, chan->chan_lock);
-}
-
-static inline void
-chan_wakeup_unlocked(wait_chan_t *chan)
-{
-	(*kcbs.wakeup_unlocked)(chan->chan_cond);
-}
-
-static inline void
-chan_wakeup(wait_chan_t *chan)
-{
-	(*kcbs.wakeup)(chan->chan_cond, chan->chan_lock);
-}
-
-static inline void
-chan_wakeup_nointr(wait_chan_t *chan)
-{
-	(*kcbs.wakeup_nointr)(chan->chan_cond, chan->chan_lock);
-}
-
-static inline void
-wait_complete(wait_compl_t *chan)
-{
-	(*kcbs.wakeup_one_compl)(chan->chan_cond, chan->chan_lock, &chan->done);
-}
-
-static inline void
-wait_complete_all(wait_compl_t *chan)
-{
-	(*kcbs.wakeup_compl)(chan->chan_cond, chan->chan_lock, &chan->done);
-}
-
-#define chan_lock(chan)		mtx_lock((chan)->chan_lock)
-#define chan_unlock(chan)	mtx_unlock((chan)->chan_lock)
-#define chan_lock_intr(chan,flgs)	mtx_lock_intr((chan)->chan_lock, flgs)
-#define chan_unlock_intr(chan,flgs)	mtx_unlock_intr((chan)->chan_lock, flgs)
 
 static inline int 
 kernel_thread_stop(kproc_t *task, int *flags, wait_chan_t *chan, int bit)
@@ -586,9 +475,6 @@ kernel_thread_stop(kproc_t *task, int *flags, wait_chan_t *chan, int bit)
 	chan_unlock_intr(chan, &intr_flags);
 	return retval;
 }
-
-#define wait_for_done(cmpl)	wait_on_chan((cmpl), (cmpl)->done)
-#define wait_for_done_timeout(cmpl, timo)	wait_on_chan_timeout((cmpl), (cmpl)->done, timo)
 
 /* We work against the following kernel defs */
 #define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))

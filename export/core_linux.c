@@ -548,11 +548,80 @@ __free(void *ptr)
 
 uma_t *mtx_cache;
 uma_t *sx_cache;
-uma_t *cv_cache;
+uma_t *wait_chan_cache;
+uma_t *wait_compl_cache;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
 uma_t *tpriv_cache;
 #endif
 uma_t *bpriv_cache;
+
+static wait_compl_t *
+__wait_compl_alloc(const char *name)
+{
+	wait_compl_t *comp;
+
+	while (!(comp = kmem_cache_alloc(wait_compl_cache, GFP_NOIO)))
+		msleep(1);
+	wait_compl_init(comp);
+	return comp;
+}
+
+static void
+__wait_compl_free(wait_compl_t *comp)
+{
+	kmem_cache_free(wait_compl_cache, comp);
+}
+
+static void
+__init_wait_compl(wait_compl_t *comp)
+{
+	mtx_lock(&comp->mtx);
+	comp->done = 0;
+	mtx_unlock(&comp->mtx);
+}
+
+static wait_chan_t *
+__wait_chan_alloc(const char *name)
+{
+	wait_chan_t *chan;
+
+	while (!(chan = kmem_cache_alloc(wait_chan_cache, GFP_NOIO)))
+		msleep(1);
+	wait_chan_init(chan, name);
+	return chan;
+}
+
+static void
+__wait_chan_free(wait_chan_t *chan)
+{
+	kmem_cache_free(wait_chan_cache, chan);
+}
+
+static void
+__chan_lock(wait_chan_t *chan)
+{
+	mtx_lock(&chan->mtx);
+}
+
+static void
+__chan_lock_intr(wait_chan_t *chan, void *data)
+{
+	unsigned long *flags = data;
+	mtx_lock_irqsave(&chan->mtx, *flags);
+}
+
+static void
+__chan_unlock(wait_chan_t *chan)
+{
+	mtx_unlock(&chan->mtx);
+}
+
+static void
+__chan_unlock_intr(wait_chan_t *chan, void *data)
+{
+	unsigned long *flags = data;
+	mtx_unlock_irqrestore(&chan->mtx, *flags);
+}
 
 static mtx_t *
 mtx_alloc(const char *name)
@@ -646,26 +715,8 @@ shx_xlocked(sx_t *sx)
 	return mutex_is_locked(sx);
 }
 
-static cv_t *
-cv_alloc(const char *name)
-{
-	cv_t *cv;
-
-	while (!(cv = kmem_cache_alloc(cv_cache, GFP_NOIO)))
-		msleep(1);
-
-	init_waitqueue_head(cv);
-	return cv;
-}
-
 static void
-cv_free(cv_t *cv)
-{
-	kmem_cache_free(cv_cache, cv);
-}
-
-static void
-cv_wait(cv_t *cv, mtx_t *mtx, void *data, int intr)
+cv_wait(wait_queue_head_t *cv, mtx_t *mtx, void *data, int intr)
 {
 	unsigned long *flags = data;
 	DEFINE_WAIT(wait);
@@ -682,8 +733,14 @@ cv_wait(cv_t *cv, mtx_t *mtx, void *data, int intr)
 	remove_wait_queue(cv, &wait);
 }
 
+static void
+__wait_on_chan(wait_chan_t *chan, void *flags, int intr)
+{
+	cv_wait(&chan->cv, &chan->mtx, flags, intr);
+}
+
 static long 
-cv_timedwait(cv_t *cv, mtx_t *mtx, void *data, long timo)
+cv_timedwait(wait_queue_head_t *cv, mtx_t *mtx, void *data, long timo)
 {
 	unsigned long *flags = data;
 	DEFINE_WAIT(wait);
@@ -699,8 +756,14 @@ cv_timedwait(cv_t *cv, mtx_t *mtx, void *data, long timo)
 	return ret;
 }
 
+static long 
+__wait_on_chan_timeout(wait_chan_t *chan, void *flags, long timo)
+{
+	return cv_timedwait(&chan->cv, &chan->mtx, flags, timo);
+}
+
 static void
-cv_wait_sig(cv_t *cv, mtx_t *mtx, int intr)
+cv_wait_sig(wait_queue_head_t *cv, mtx_t *mtx, int intr)
 {
 	DEFINE_WAIT(wait);
 
@@ -717,73 +780,113 @@ cv_wait_sig(cv_t *cv, mtx_t *mtx, int intr)
 }
 
 static void
-wakeup(cv_t *cv, mtx_t *mtx)
+__wait_on_chan_sig(wait_chan_t *chan, int intr)
+{
+	cv_wait_sig(&chan->cv, &chan->mtx, intr);
+}
+
+static void
+__chan_wakeup(wait_chan_t *chan)
 {
 	unsigned long flags;
 
-	mtx_lock_irqsave(mtx, flags);
-	wake_up_all(cv);
-	mtx_unlock_irqrestore(mtx, flags);
+	mtx_lock_irqsave(&chan->mtx, flags);
+	wake_up_all(&chan->cv);
+	mtx_unlock_irqrestore(&chan->mtx, flags);
 }
 
 static void
-wakeup_nointr(cv_t *cv, mtx_t *mtx)
+__chan_wakeup_nointr(wait_chan_t *chan)
 {
-	mtx_lock(mtx);
-	wake_up_all(cv);
-	mtx_unlock(mtx);
+	mtx_lock(&chan->mtx);
+	wake_up_all(&chan->cv);
+	mtx_unlock(&chan->mtx);
 }
 
 static void
-wakeup_compl(cv_t *cv, mtx_t *mtx, int *done)
-{
-	unsigned long flags;
-
-	mtx_lock_irqsave(mtx, flags);
-	*done = 1;
-	wake_up_all(cv);
-	mtx_unlock_irqrestore(mtx, flags);
-}
-
-static void
-wakeup_one(cv_t *cv, mtx_t *mtx)
+__chan_wakeup_one(wait_chan_t *chan)
 {
 	unsigned long flags;
 
-	mtx_lock_irqsave(mtx, flags);
-	wake_up(cv);
-	mtx_unlock_irqrestore(mtx, flags);
+	mtx_lock_irqsave(&chan->mtx, flags);
+	wake_up(&chan->cv);
+	mtx_unlock_irqrestore(&chan->mtx, flags);
 }
 
 static void
-wakeup_one_nointr(cv_t *cv, mtx_t *mtx)
+__chan_wakeup_one_nointr(wait_chan_t *chan)
 {
-	mtx_lock(mtx);
-	wake_up(cv);
-	mtx_unlock(mtx);
+	mtx_lock(&chan->mtx);
+	wake_up(&chan->cv);
+	mtx_unlock(&chan->mtx);
 }
 
 static void
-wakeup_one_compl(cv_t *cv, mtx_t *mtx, int *done)
+__chan_wakeup_one_unlocked(wait_chan_t *chan)
+{
+	wake_up(&chan->cv);
+}
+
+static void
+__chan_wakeup_unlocked(wait_chan_t *chan)
+{
+	wake_up_all(&chan->cv);
+}
+
+static void
+__wait_for_done(wait_compl_t *comp)
 {
 	unsigned long flags;
 
-	mtx_lock_irqsave(mtx, flags);
-	*done = 1;
-	wake_up(cv);
-	mtx_unlock_irqrestore(mtx, flags);
+	mtx_lock_irqsave(&comp->mtx, flags);
+	while (!comp->done) {
+		cv_wait(&comp->cv, &comp->mtx, &flags, 0);
+	}
+	mtx_unlock_irqrestore(&comp->mtx, flags);
+
+}
+
+static long 
+__wait_for_done_timeout(wait_compl_t *comp, long timo)
+{
+	unsigned long flags;
+
+	mtx_lock_irqsave(&comp->mtx, flags);
+	while (!comp->done) {
+		timo = cv_timedwait(&comp->cv, &comp->mtx, &flags, timo);
+		if (!timo)
+			break;
+	}
+	mtx_unlock_irqrestore(&comp->mtx, flags);
+	return timo;
 }
 
 static void
-wakeup_one_unlocked(cv_t *cv)
+__set_wait_compl(wait_compl_t *comp)
 {
-	wake_up(cv);
+	comp->done = 1;
 }
 
 static void
-wakeup_unlocked(cv_t *cv)
+__wait_complete(wait_compl_t *comp)
 {
-	wake_up_all(cv);
+	unsigned long flags;
+
+	mtx_lock_irqsave(&comp->mtx, flags);
+	comp->done = 1;
+	wake_up(&comp->cv);
+	mtx_unlock_irqrestore(&comp->mtx, flags);
+}
+
+static void
+__wait_complete_all(wait_compl_t *comp)
+{
+	unsigned long flags;
+
+	mtx_lock_irqsave(&comp->mtx, flags);
+	comp->done = 1;
+	wake_up_all(&comp->cv);
+	mtx_unlock_irqrestore(&comp->mtx, flags);
 }
 
 static uint64_t
@@ -1472,6 +1575,29 @@ static struct qs_kern_cbs kcbs = {
 	.malloc			= __malloc,
 	.free			= __free,
 	.get_availmem		= get_availmem,
+	.wait_compl_alloc	= __wait_compl_alloc,
+	.wait_compl_free	= __wait_compl_free,
+	.init_wait_compl	= __init_wait_compl,
+	.set_wait_compl		= __set_wait_compl,
+	.wait_complete		= __wait_complete,
+	.wait_complete_all	= __wait_complete_all,
+	.wait_for_done		= __wait_for_done,
+	.wait_for_done_timeout	= __wait_for_done_timeout,
+	.wait_chan_alloc	= __wait_chan_alloc,
+	.wait_chan_free		= __wait_chan_free,
+	.chan_lock		= __chan_lock,
+	.chan_unlock		= __chan_unlock,
+	.chan_lock_intr		= __chan_lock_intr,
+	.chan_unlock_intr	= __chan_unlock_intr,
+	.chan_wakeup_one	= __chan_wakeup_one,
+	.chan_wakeup_one_unlocked = __chan_wakeup_one_unlocked,
+	.chan_wakeup_one_nointr = __chan_wakeup_one_nointr,
+	.chan_wakeup		= __chan_wakeup,
+	.chan_wakeup_unlocked	= __chan_wakeup_unlocked,
+	.chan_wakeup_nointr	= __chan_wakeup_nointr,
+	.wait_on_chan_sig	= __wait_on_chan_sig,
+	.wait_on_chan		= __wait_on_chan,
+	.wait_on_chan_timeout	= __wait_on_chan_timeout,
 	.mtx_alloc		= mtx_alloc,
 	.mtx_free		= mtx_free,
 	.mtx_lock		= __mtx_lock,
@@ -1488,19 +1614,6 @@ static struct qs_kern_cbs kcbs = {
 	.bdev_start		= bdev_start,
 	.bdev_marker		= bdev_marker,
 	.bdev_sync		= bdev_sync,
-	.cv_alloc		= cv_alloc,
-	.cv_free		= cv_free,
-	.cv_wait		= cv_wait,
-	.cv_timedwait		= cv_timedwait,
-	.cv_wait_sig		= cv_wait_sig,
-	.wakeup			= wakeup,
-	.wakeup_nointr		= wakeup_nointr,
-	.wakeup_one		= wakeup_one,
-	.wakeup_one_nointr	= wakeup_one_nointr,
-	.wakeup_one_unlocked	= wakeup_one_unlocked,
-	.wakeup_unlocked	= wakeup_unlocked,
-	.wakeup_compl		= wakeup_compl,
-	.wakeup_one_compl	= wakeup_one_compl,
 	.pause			= __pause,
 	.printf			= __qs_printf,
 	.sprintf		= __sprintf,
@@ -1903,8 +2016,11 @@ exit_caches(void)
 	if (sx_cache)
 		uma_zdestroy(sx_cache);
 
-	if (cv_cache)
-		uma_zdestroy(cv_cache);
+	if (wait_chan_cache)
+		uma_zdestroy(wait_chan_cache);
+
+	if (wait_compl_cache)
+		uma_zdestroy(wait_compl_cache);
 }
 
 static int
@@ -1932,9 +2048,14 @@ init_caches(void)
 	if (unlikely(!sx_cache))
 		return -1;
  
-	cv_cache = uma_zcreate("cv_cache", sizeof(cv_t));
-	if (unlikely(!cv_cache))
+	wait_chan_cache = uma_zcreate("wait_chan_cache", sizeof(wait_chan_t));
+	if (unlikely(!wait_chan_cache))
 		return -1;
+
+	wait_compl_cache = uma_zcreate("wait_compl_cache", sizeof(wait_compl_t));
+	if (unlikely(!wait_compl_cache))
+		return -1;
+
 	return 0; 
 }
 

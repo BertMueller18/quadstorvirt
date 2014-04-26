@@ -636,6 +636,7 @@ init_caches(void)
 		return -1;
 	}
 
+#ifdef FREEBSD
 	CREATE_CACHE(chan_cache, "qs_wait_chan", sizeof(wait_chan_t));
 	if (unlikely(!chan_cache)) {
 		return -1;
@@ -646,7 +647,6 @@ init_caches(void)
 		return -1;
 	}
 
-#ifdef FREEBSD
 	CREATE_CACHE(biot_cache, "qs_biot", sizeof(struct biot));
 	if (unlikely(!biot_cache)) {
 		return -1;

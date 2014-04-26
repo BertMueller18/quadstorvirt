@@ -103,22 +103,40 @@ enum {
 #define VM_ALLOC_ZERO __GFP_ZERO
 #define SSD_MIN_SIZE 18
 
-typedef wait_queue_head_t wait_chan_t;
-typedef wait_queue_head_t cv_t;
+typedef struct wait_chan {
+	wait_queue_head_t cv;
+	spinlock_t mtx;
+} wait_chan_t;
+
+
+typedef struct wait_compl {
+	wait_queue_head_t cv;
+	spinlock_t mtx;
+	int done;
+} wait_compl_t;
+
+static inline void
+wait_compl_init(wait_compl_t *comp)
+{
+	init_waitqueue_head(&comp->cv);
+	spin_lock_init(&comp->mtx);
+	comp->done = 0;
+}
 
 static inline void
 wait_chan_init(wait_chan_t *chan, const char *name)
 {
-	init_waitqueue_head(chan);
+	init_waitqueue_head(&chan->cv);
+	spin_lock_init(&chan->mtx);
 }
 
-#define wait_on_chan(chan,condition)	wait_event(chan,condition)
-#define wait_on_chan_interruptible(chan,condition)	wait_event_interruptible(chan,condition)
-#define wait_on_chan_timeout(chan,condition,timeout)	wait_event_timeout(chan,condition,timeout)
+#define wait_on_chan(chan,condition)	wait_event((chan).cv, condition)
+#define wait_on_chan_interruptible(chan,condition)	wait_event_interruptible((chan).cv, condition)
+#define wait_on_chan_timeout(chan,condition,timeout)	wait_event_timeout((chan).cv, condition, timeout)
 
-#define chan_wakeup_one(chan)	wake_up(chan)
-#define chan_wakeup(chan)	wake_up_all(chan)
-#define chan_wakeup_interruptible(chan)	wake_up_interruptible(chan)
+#define chan_wakeup_one(chan)	wake_up(&((chan)->cv))
+#define chan_wakeup(chan)	wake_up_all(&((chan)->cv))
+#define chan_wakeup_interruptible(chan)	wake_up_interruptible(&((chan)->cv))
 
 #define chan_wakeup_condition(chn, condition)			\
 do {								\

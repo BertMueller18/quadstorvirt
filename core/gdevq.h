@@ -91,7 +91,7 @@ wait_for_pgdata(struct pgdata **pglist, int pglist_cnt)
 static inline void
 mark_complete(struct pgdata *pgdata)
 {
-	pgdata->completion->done = 1;
+	set_wait_complete(pgdata->completion);
 	atomic_set_bit(PGDATA_HASH_CHECK_DONE, &pgdata->flags);
 }
 

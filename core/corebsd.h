@@ -170,6 +170,12 @@ wait_chan_alloc(char *name)
 }
 
 static inline void
+set_wait_complete(wait_compl_t *comp)
+{
+	comp->done = 1;
+}
+
+static inline void
 wait_compl_init(wait_compl_t *chan, const char *name)
 {
 	mtx_init(&chan->chan_lock, name, NULL, MTX_DEF);

@@ -883,6 +883,12 @@ fcbridge_attach_interface(void)
 
 	linker_file_foreach(linker_attach, NULL);
 }
+
+static void
+alloc_cmds_wakeup(void)
+{
+	chan_wakeup(&alloced_cmds_wait);
+}
 #else
 
 void
@@ -900,7 +906,7 @@ fcbridge_detach_interface(void)
 	icbs.qload_done = 0;
 	while(atomic_read(&alloced_cmds)) {
 		sx_xunlock(&itf_lock);
-		wait_on_chan(alloced_cmds_wait, !atomic_read(&alloced_cmds));
+		wait_event(alloced_cmds_wait, !atomic_read(&alloced_cmds));
 		sx_xlock(&itf_lock);
 	}
 
@@ -945,6 +951,12 @@ fcbridge_attach_interface(void)
 	else {
 		module_put(THIS_MODULE);
 	}
+}
+
+static void
+alloc_cmds_wakeup(void)
+{
+	wake_up(&alloced_cmds_wait);
 }
 #endif
 
@@ -1008,7 +1020,7 @@ __ctio_free_all(struct qsio_scsiio *ctio, int local_pool)
 		(*icbs.ctio_free_all)(ctio);
 		DEBUG_BUG_ON(!atomic_read(&alloced_cmds));
 		if (atomic_dec_and_test(&alloced_cmds))
-			chan_wakeup(&alloced_cmds_wait);
+			alloc_cmds_wakeup();
 	}
 	else
 	{
