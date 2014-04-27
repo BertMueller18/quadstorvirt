@@ -1143,7 +1143,7 @@ bio_free_pages(bio_t *bio)
 	struct bio_vec *bvec;
 	int j;
 
-	bio_for_each_segment(bvec, bio, j) {
+	__bio_for_each_segment(bvec, bio, j, 0) {
 		atomic64_inc(&pages_unrefed);
 		put_page(bvec->bv_page);
 	}
