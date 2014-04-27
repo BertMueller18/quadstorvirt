@@ -107,8 +107,6 @@ tcache_free(struct tcache *tcache)
 
 	free(tcache->bio_list, M_RCACHEBIO);
 	wait_completion_free(tcache->completion);
-	if (tcache->tcache_lock)
-		mtx_free(tcache->tcache_lock);
 	uma_zfree(tcache_cache, tcache);
 }
 

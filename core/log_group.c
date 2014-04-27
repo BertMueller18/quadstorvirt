@@ -63,9 +63,6 @@ static void log_group_end_bio(struct bio *bio, int err)
 		atomic_clear_bit_short(LOG_META_DATA_DIRTY, &log_page->flags);
 		chan_wakeup(log_page->log_page_wait);
 	}
-	mtx_lock(tcache->tcache_lock);
-	complete_io_waiters(&tcache->io_waiters);
-	mtx_unlock(tcache->tcache_lock);
 
 	tcache_free_pages(tcache);
 	wait_complete_all(tcache->completion);
@@ -97,7 +94,6 @@ log_group_io(struct log_group *group, struct tcache **ret_tcache)
 		rw = QS_IO_SYNC_FLUSH;
 
 	tcache = tcache_alloc(LOG_GROUP_MAX_PAGES);
-	tcache->tcache_lock = mtx_alloc("tcache lock");
 
 	atomic_set_bit_short(TCACHE_LOG_WRITE, &tcache->flags);
 	tcache->write_flags = group->write_flags;
@@ -131,7 +127,6 @@ log_group_io(struct log_group *group, struct tcache **ret_tcache)
 	}
 
 	if (!atomic_read(&tcache->bio_remain)) {
-		complete_io_waiters(&tcache->io_waiters);
 		tcache_put(tcache);
 		return 0;
 	}

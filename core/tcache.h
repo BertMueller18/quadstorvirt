@@ -46,7 +46,6 @@ struct tcache {
 	uint16_t end_idx;
 	int write_flags;
 	SLIST_ENTRY(tcache) t_list;
-	mtx_t *tcache_lock;
 #ifdef ENABLE_STATS
 	int page_misses;
 	int bint_misses;
