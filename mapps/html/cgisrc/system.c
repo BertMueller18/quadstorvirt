@@ -103,15 +103,9 @@ int main()
 	cgi_print_row_end();
 
 	cgi_print_row_start();
-	cgi_print_column("name", "Core Version");
+	cgi_print_column("name", "Version");
 	cgi_print_comma();
-	cgi_print_column("value", get_version("/quadstor/etc/quadstor-core-version"));
-	cgi_print_row_end();
-
-	cgi_print_row_start();
-	cgi_print_column("name", "Itf Version");
-	cgi_print_comma();
-	cgi_print_column("value", get_version("/quadstor/etc/quadstor-itf-version"));
+	cgi_print_column("value", QUADSTOR_VIRT_VERSION);
 	cgi_print_row_end();
 
 	cgi_print_row_start();

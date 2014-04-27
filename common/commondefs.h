@@ -19,6 +19,8 @@
 #ifndef QS_COMMONDEFS_H_
 #define QS_COMMONDEFS_H_ 1
 
+#define QUADSTOR_VIRT_VERSION	"3.0.65.3"
+
 #define TL_MAX_DISKS	512
 #define TL_MAX_POOLS	512	
 #define TL_MAX_TDISKS	4096
