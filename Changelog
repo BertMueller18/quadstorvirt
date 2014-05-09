@@ -1,3 +1,13 @@
+Release 3.0.65.5
+	* Multipath disk scanning fixes
+	* Fix for inaccessible out after a QUADStor service restart
+	  when accessed over the FC/InfiniBand interface
+
+Release 3.0.65.4
+	* Code cleanups and small performance improvements
+	* Reduce the number of slab allocations
+	* Fix for huge page leaks with recent (3.10+) kernels
+
 Release 3.0.64
 	* Show LUN numbers when listing VDisks
 	* Fix for incorrect FC rule ALLOW checks
