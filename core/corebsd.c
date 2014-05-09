@@ -23,7 +23,6 @@
 
 MALLOC_DEFINE(M_QUADSTOR, "quads", "QUADStor allocations");
 MALLOC_DEFINE(M_QSOCK, "quad sock", "QUADStor allocations");
-MALLOC_DEFINE(M_CBS, "quad cbs", "QUADStor allocations");
 MALLOC_DEFINE(M_SYNC_THR, "quad sync thr", "QUADStor allocations");
 MALLOC_DEFINE(M_AMAP_TABLE_SYNC, "quad amap table sync", "QUADStor allocations");
 MALLOC_DEFINE(M_CLIENT_NODE, "quad client node", "QUADStor allocations");
