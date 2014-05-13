@@ -1,3 +1,7 @@
+Release 3.0.65.6
+	* Handle disks (LIO/ReadyNAS for eg) reporting a serial number length
+	  greater than 196 bytes
+
 Release 3.0.65.5
 	* Multipath disk scanning fixes
 	* Fix for inaccessible out after a QUADStor service restart
